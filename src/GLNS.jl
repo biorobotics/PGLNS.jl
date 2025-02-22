@@ -79,7 +79,7 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
 
   temperature_lock = ReentrantLock()
 
-  @batch for thread_idx=1:nthreads
+  @threads for thread_idx=1:nthreads
     Random.seed!(1234 + thread_idx) # TODO: replace with the rngs from Future.randjump
   end
 
@@ -116,7 +116,7 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
         phase = :late
       end
       this_phase = phase
-      @batch for thread_idx=1:nthreads
+      @threads for thread_idx=1:nthreads
         this_num_trials_feasible = 0
         this_num_trials = 0
         while true
@@ -128,7 +128,6 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
           this_iter_count = 0
           @lock iter_count_lock this_iter_count = iter_count
 
-          this_phase
           lock(phase_lock)
           try
             if this_iter_count > param[:num_iterations]/2 && phase == :early
@@ -154,12 +153,7 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
 
           # decide whether or not to accept trial
           this_temperature = 0.
-          lock(temperature_lock)
-          try
-            this_temperature = temperature
-          finally
-            unlock(temperature_lock)
-          end
+          @lock temperature_lock this_temperature = temperature
 
           lock(current_lock)
           try
@@ -181,7 +175,7 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
             if trial.cost < best.cost
               updated_best = true
               best = Tour(copy(trial.tour), trial.cost)
-              @printf("Found new best tour after %f s with cost %d\n", timer, best.cost)
+              @printf("Thread %d found new best tour after %f s with cost %d\n", thread_idx, timer, best.cost)
             end
           finally
             unlock(best_lock)
@@ -222,18 +216,14 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
             end
           end
 
-          lock(temperature_lock)
-          try
-            temperature *= cooling_rate  # cool the temperature
-          finally
-            unlock(temperature_lock)
-          end
+          @lock temperature_lock temperature *= cooling_rate  # cool the temperature
+
           lock(iter_count_lock)
           try
             iter_count += 1
             count[:total_iter] += 1
           finally
-            lock(iter_count_lock)
+            unlock(iter_count_lock)
           end
 
           if time() - init_time > param[:max_time]

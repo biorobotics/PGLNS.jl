@@ -11,3 +11,4 @@ npyfile = first(ARGS[1], length(ARGS[1]) - length(".gtsp")) * ".npy"
 dist = npzread(npyfile)
 
 GLNS.main(ARGS, 10., 298309430, given_initial_tours, dist)
+GLNS.main(ARGS, 10., 298309430, given_initial_tours, dist)

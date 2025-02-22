@@ -69,7 +69,7 @@ function remove_insert(current::Tour, dist, member,
 		randpdf_insertion!(trial.tour, sets_to_insert, dist, setdist, sets, sets_unshuffled,
 							insertion.value, noise, set_locks)
 	end
-	rand() < param[:prob_reopt] && opt_cycle!(trial, dist, sets, member, param, setdist, "partial")
+	rand() < param[:prob_reopt] && opt_cycle!(trial, dist, sets_unshuffled, member, param, setdist, "partial")
 
 	# update power scores for remove and insert
   # not needed if we're only doing 1 cold trial
