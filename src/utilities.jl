@@ -25,6 +25,10 @@ mutable struct Tour
 	cost::Int64
 end
 
+function tour_copy(tour)
+  return Tour(copy(tour.tour), tour.cost)
+end
+
 """ return the vertex before tour[i] on tour """
 @inline function prev_tour(tour, i)
 	i != 1 && return tour[i - 1]

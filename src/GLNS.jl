@@ -105,7 +105,7 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
 
     while count[:warm_trial] <= param[:warm_trials]
       iter_count = 1
-      current = Tour(copy(best.tour), best.cost)
+      current = tour_copy(best)
       temperature = 1.442 * param[:accept_percentage] * best.cost
       # accept a solution with 50% higher cost with 0.05% change after num_iterations.
       cooling_rate = ((0.0005 * lowest.cost)/(param[:accept_percentage] *
@@ -161,9 +161,9 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
                accepttrial(trial.cost, current.cost, temperature)
               @assert(param[:mode] != "slow") # I don't want to perform an opt cycle while something is locked
               param[:mode] == "slow" && opt_cycle!(current, dist, sets_unshuffled, membership, param, setdist, "full") # This seems incorrect. Why are we optimizing current, then setting current = trial?
-              current = trial
+              current = tour_copy(trial)
             else
-              trial = Tour(copy(current.tour), current.cost)
+              trial = tour_copy(current)
             end
           finally
             unlock(current_lock)
@@ -174,7 +174,7 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
           try
             if trial.cost < best.cost
               updated_best = true
-              best = Tour(copy(trial.tour), trial.cost)
+              best = tour_copy(trial)
               @printf("Thread %d found new best tour after %f s with cost %d\n", thread_idx, timer, best.cost)
             end
           finally
@@ -202,7 +202,7 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
             lock(best_lock)
             try
               if trial.cost < best.cost
-                best = Tour(copy(trial.tour), trial.cost)
+                best = tour_copy(trial)
                 # print_best(count, param, best, lowest, init_time)
                 timer = (time_ns() - start_time)/1.0e9
                 @printf("Found new best tour after %f s with cost %d\n", timer, best.cost)
@@ -263,6 +263,7 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
   print_summary(lowest, timer, membership, param, tour_history, cost_mat_read_time, instance_read_time, num_trials_feasible, num_trials, false)
 
   @assert(lowest.cost == tour_cost(lowest.tour, dist))
+  @assert(length(lowest.tour) == num_sets)
 end
 
 function parse_cmd(ARGS)

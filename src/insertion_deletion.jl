@@ -23,7 +23,7 @@ function remove_insert(current::Tour, dist, member,
 						powers, param::Dict{Symbol,Any}, phase::Symbol, powers_lock::ReentrantLock, current_lock::ReentrantLock, set_locks::Vector{ReentrantLock})
 	# make a new tour to perform the insertion and deletion on
   trial = Tour(Vector{Int64}(), 0)
-  @lock current_lock trial = Tour(copy(current.tour), current.cost)
+  @lock current_lock trial = tour_copy(current)
 	pivot_tour!(trial.tour)
 	num_removals = rand(param[:min_removals]:param[:max_removals])
 
