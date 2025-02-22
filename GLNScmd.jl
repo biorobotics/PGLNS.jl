@@ -17,7 +17,7 @@
 using Sockets
 import Pkg
 # Pkg.activate(expanduser("~/GLNS_lazy_edge_eval.jl"))
-using GLNS
+# using GLNS
 using Printf
 using Dates
 
@@ -195,7 +195,7 @@ function main()
       end
 
       read_start_time = time_ns()
-      num_vertices, num_sets, sets, dist, membership = read_file(problem_instance)
+      num_vertices, num_sets, sets, membership = read_file(problem_instance)
       read_end_time = time_ns()
       instance_read_time = (read_end_time - read_start_time)/1.0e9
       @printf("Reading GTSPLIB file took %f s\n", instance_read_time)

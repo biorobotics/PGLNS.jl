@@ -12,49 +12,81 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+using Base.Threads
+
 """
 Select a removal and an insertion method using powers, and then perform
 removal followed by insertion on tour.  Operation done in place.
 """
-function remove_insert(current::Tour, best::Tour, dist::Array{Int64,2}, member::Array{Int64,1},
-						setdist::Distsv, sets::Vector{Vector{Int64}},
-						powers, param::Dict{Symbol,Any}, phase::Symbol)
+function remove_insert(current::Tour, dist, member,
+						setdist::Distsv, sets::Vector{Vector{Int64}}, sets_unshuffled::Vector{Vector{Int64}},
+						powers, param::Dict{Symbol,Any}, phase::Symbol, powers_lock::ReentrantLock, current_lock::ReentrantLock, set_locks::Vector{ReentrantLock})
 	# make a new tour to perform the insertion and deletion on
-    trial = Tour(copy(current.tour), current.cost)
+  trial = Tour(Vector{Int64}(), 0)
+  @lock current_lock trial = Tour(copy(current.tour), current.cost)
 	pivot_tour!(trial.tour)
 	num_removals = rand(param[:min_removals]:param[:max_removals])
 
-	removal = power_select(powers["removals"], powers["removal_total"], phase)
+  removal_idx = 0
+  insertion_idx = 0
+  noise_idx = 0
+  # If we're only running one cold trial, we don't
+  # update the heuristic weights which means we don't need
+  # to lock
+  if param[:cold_trials] != 1
+    lock(powers_lock)
+    try
+      removal_idx = power_select(powers["removals"], powers["removal_total"], phase)
+      insertion_idx = power_select(powers["insertions"], powers["insertion_total"], phase)
+      noise_idx = power_select(powers["noise"], powers["noise_total"], phase)
+    finally
+      unlock(powers_lock)
+    end
+  else
+    removal_idx = power_select(powers["removals"], powers["removal_total"], phase)
+    insertion_idx = power_select(powers["insertions"], powers["insertion_total"], phase)
+    noise_idx = power_select(powers["noise"], powers["noise_total"], phase)
+  end
+  removal = powers["removals"][removal_idx]
+  insertion = powers["insertions"][insertion_idx]
+  noise = powers["noise"][noise_idx]
 	if removal.name == "distance"
 		sets_to_insert = distance_removal!(trial.tour, dist, num_removals,
 													member, removal.value)
-    elseif removal.name == "worst"
+  elseif removal.name == "worst"
 		sets_to_insert = worst_removal!(trial.tour, dist, num_removals,
 													member, removal.value)
 	else
 		sets_to_insert = segment_removal!(trial.tour, num_removals, member)
 	end
 
-	randomize_sets!(sets, sets_to_insert)
+  randomize_sets!(sets, sets_to_insert, set_locks)
+
 	# then perform insertion
-	insertion = power_select(powers["insertions"], powers["insertion_total"], phase)
-	noise = power_select(powers["noise"], powers["noise_total"], phase)
 	if insertion.name == "cheapest"
-		cheapest_insertion!(trial.tour, sets_to_insert, dist, setdist, sets)
+		cheapest_insertion!(trial.tour, sets_to_insert, dist, setdist, sets_unshuffled)
 	else
-		randpdf_insertion!(trial.tour, sets_to_insert, dist, setdist, sets,
-							insertion.value, noise)
+		randpdf_insertion!(trial.tour, sets_to_insert, dist, setdist, sets, sets_unshuffled,
+							insertion.value, noise, set_locks)
 	end
 	rand() < param[:prob_reopt] && opt_cycle!(trial, dist, sets, member, param, setdist, "partial")
 
 	# update power scores for remove and insert
-	score = 100 * max(current.cost - trial.cost, 0)/current.cost
-	insertion.scores[phase] += score
-	insertion.count[phase] += 1
-	removal.scores[phase] += score
-	removal.count[phase] += 1
-	noise.scores[phase] += score
-	noise.count[phase] += 1
+  # not needed if we're only doing 1 cold trial
+  if param[:cold_trials] != 1
+    @lock current_lock score = 100 * max(current.cost - trial.cost, 0)/current.cost
+    lock(powers_lock)
+    try
+      insertion.scores[phase] += score
+      insertion.count[phase] += 1
+      removal.scores[phase] += score
+      removal.count[phase] += 1
+      noise.scores[phase] += score
+      noise.count[phase] += 1
+    finally
+      unlock(powers_lock)
+    end
+  end
 	return trial
 end
 
@@ -102,8 +134,8 @@ end
 
 """  choose set with pdf_select, and then insert in best place with noise  """
 function randpdf_insertion!(tour::Array{Int64,1}, sets_to_insert::Array{Int64,1},
-							dist::Array{Int64, 2}, setdist::Distsv,
-							sets::Vector{Vector{Int64}}, power::Float64, noise::Power)
+							dist, setdist::Distsv,
+							sets::Vector{Vector{Int64}}, sets_unshuffled::Vector{Vector{Int64}}, power::Float64, noise::Power, set_locks::Vector{ReentrantLock})
 
     mindist = [typemax(Int64) for i=1:length(sets_to_insert)]
     @inbounds for i = 1:length(sets_to_insert)
@@ -129,11 +161,11 @@ function randpdf_insertion!(tour::Array{Int64,1}, sets_to_insert::Array{Int64,1}
         # find the closest vertex and the best insertion in that vertex
         nearest_set = sets_to_insert[set_index]
 		if noise.name == "subset"
-			bestv, bestpos = insert_subset_lb(tour, dist, sets[nearest_set], nearest_set,
+			bestv, bestpos = insert_subset_lb(tour, dist, sets_unshuffled[nearest_set], nearest_set,
 											  setdist, noise.value)
 		else
 			bestv, bestpos =
-					insert_lb(tour, dist, sets[nearest_set], nearest_set, setdist, noise.value)
+					insert_lb(tour, dist, sets[nearest_set], nearest_set, setdist, noise.value, set_locks[nearest_set])
 		end
         insert!(tour, bestpos, bestv)  # perform the insertion
         new_vertex_in_tour = bestv
@@ -145,7 +177,7 @@ end
 
 
 function cheapest_insertion!(tour::Array{Int64,1}, sets_to_insert::Array{Int64,1},
-	dist::Array{Int64, 2}, setdist::Distsv, sets::Vector{Vector{Int64}})
+	dist, setdist::Distsv, sets::Vector{Vector{Int64}}, sets_lock::ReentrantLock)
     """
 	choose vertex that can be inserted most cheaply, and insert it in that position
 	"""
@@ -178,8 +210,8 @@ Given a tour and a set, this function finds the vertex in the set with minimum
 insertion cost, along with the position of this insertion in the tour.  If
 best_position is i, then vertex should be inserted between tour[i-1] and tour[i].
 """
-@inline function insert_lb(tour::Array{Int64,1}, dist::Array{Int64,2}, set::Array{Int64, 1},
-							setind::Int, setdist::Distsv, noise::Float64)
+@inline function insert_lb(tour::Array{Int64,1}, dist, set::Array{Int64, 1},
+							setind::Int, setdist::Distsv, noise::Float64, set_lock::ReentrantLock)
 	best_cost = typemax(Int64)
 	bestv = 0
 	bestpos = 0
@@ -189,21 +221,26 @@ best_position is i, then vertex should be inserted between tour[i-1] and tour[i]
 		lb = setdist.vert_set[v1, setind] + setdist.set_vert[setind, tour[i]] - dist[v1, tour[i]]
 		lb > best_cost && continue
 
-		for v in set
-	        insert_cost = dist[v1, v] + dist[v, tour[i]] - dist[v1, tour[i]]
-			noise > 0.0 && (insert_cost += round(Int64, noise * rand() * abs(insert_cost)))
-			if insert_cost < best_cost
-				best_cost = insert_cost
-				bestv = v
-				bestpos = i
-	        end
-		end
+    lock(set_lock)
+    try
+      for v in set
+            insert_cost = dist[v1, v] + dist[v, tour[i]] - dist[v1, tour[i]]
+        noise > 0.0 && (insert_cost += round(Int64, noise * rand() * abs(insert_cost)))
+        if insert_cost < best_cost
+          best_cost = insert_cost
+          bestv = v
+          bestpos = i
+        end
+      end
+    finally
+      unlock(set_lock)
     end
-    return bestv, bestpos
+  end
+  return bestv, bestpos
 end
 
 
-@inline function insert_subset_lb(tour::Array{Int64,1}, dist::Array{Int64,2}, set::Array{Int64, 1},
+@inline function insert_subset_lb(tour::Array{Int64,1}, dist, set::Array{Int64, 1},
 							setind::Int, setdist::Distsv, noise::Float64)
 	best_cost = typemax(Int64)
 	bestv = 0
@@ -233,7 +270,7 @@ end
 
 """build tour from scratch on a cold restart"""
 function initial_tour!(lowest::Tour, dist::Array{Int64, 2}, sets::Vector{Vector{Int64}},
-						setdist::Distsv, trial_num::Int64, param::Dict{Symbol,Any}, confirmed_dist::Array{Bool,2}, client_socket::TCPSocket, num_sets::Int, member::Array{Int64,1}, given_initial_tour::Vector{Int64})
+						setdist::Distsv, trial_num::Int64, param::Dict{Symbol,Any}, num_sets::Int, member::Array{Int64,1}, given_initial_tour::Vector{Int64})
 	sets_to_insert = collect(1:param[:num_sets])
 	best = Tour(Int64[], typemax(Int64))
 
@@ -246,11 +283,7 @@ function initial_tour!(lowest::Tour, dist::Array{Int64, 2}, sets::Vector{Vector{
 	else
 		random_insertion!(best.tour, sets_to_insert, dist, sets, setdist)
 	end
-  if param[:lazy_edge_eval] == 1
-    eval_edges!(best, dist, confirmed_dist, client_socket, setdist, num_sets, member)
-  else
-    best.cost = tour_cost(best.tour, dist)
-  end
+  best.cost = tour_cost(best.tour, dist)
   # I think the original GLNS code had a bug here, since it set lowest = best, even though this does not change lowest upon returning.
   # On the other hand, I don't think this bug affected algorithm behavior
 	if lowest.cost > best.cost
@@ -266,7 +299,7 @@ Randomly shuffle the sets, and then insert the best vertex from each set back in
 the tour where sets are considered in shuffled order.
 """
 function random_insertion!(tour::Array{Int64,1}, sets_to_insert::Array{Int64,1},
-						   dist::Array{Int64, 2}, sets::Vector{Vector{Int64}}, setdist::Distsv)
+						   dist, sets::Vector{Vector{Int64}}, setdist::Distsv)
     shuffle!(sets_to_insert)  # randomly permute the sets
     for set in sets_to_insert
         # only have to compute the insert cost for the changed portion of the tour
@@ -300,8 +333,8 @@ end
 Remove the vertices randomly, but biased towards those that add the most length to the
 tour.  Bias is based on the power input.  Vertices are then selected via pdf select.
 """
-function worst_removal!(tour::Array{Int64,1}, dist::Array{Int64, 2},
-							num_to_remove::Int64, member::Array{Int64,1}, power::Float64)
+function worst_removal!(tour::Array{Int64,1}, dist,
+							num_to_remove::Int64, member, power::Float64)
     deleted_sets = Array{Int}(undef, 0)
 	while length(deleted_sets) < num_to_remove
 		removal_costs = worst_vertices(tour, dist)
@@ -317,7 +350,7 @@ end
 
 
 """ removing a single continuos segment of the tour of size num_remove """
-function segment_removal!(tour::Array{Int64, 1}, num_to_remove::Int64, member::Array{Int64,1})
+function segment_removal!(tour::Array{Int64, 1}, num_to_remove::Int64, member)
 	i = rand(1:length(tour))
 	deleted_sets = Array{Int}(undef, 0)
 	while length(deleted_sets) < num_to_remove
@@ -330,8 +363,8 @@ end
 
 
 """  pick a random vertex, and delete its closest neighbors  """
-function distance_removal!(tour::Array{Int64,1}, dist::Array{Int64, 2},
-							   num_to_remove::Int64, member::Array{Int64,1}, power::Float64)
+function distance_removal!(tour::Array{Int64,1}, dist,
+							   num_to_remove::Int64, member, power::Float64)
     deleted_sets = Array{Int}(undef, 0)
     deleted_vertices = Array{Int}(undef, 0)
 
@@ -361,7 +394,7 @@ end
 """
 determine the cost of removing each vertex from the tour, given that all others remain.
 """
-function worst_vertices(tour::Array{Int64, 1}, dist::Array{Int64, 2})
+function worst_vertices(tour::Array{Int64, 1}, dist)
     removal_cost = zeros(Int64, length(tour))
     @inbounds for i = 1:length(tour)
         if i == 1

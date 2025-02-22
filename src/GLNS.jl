@@ -17,6 +17,10 @@ using Random
 using Sockets
 using Printf
 using NPZ
+using Polyester: @batch
+using Base.Threads
+using ThreadPinning
+import Future
 include("utilities.jl")
 include("parse_print.jl")
 include("tour_optimizations.jl")
@@ -24,34 +28,19 @@ include("adaptive_powers.jl")
 include("insertion_deletion.jl")
 include("parameter_defaults.jl")
 
-"""
-Main GTSP solver, which takes as input a problem instance and
-some optional arguments
-"""
-function solver(problem_instance::String, client_socket::TCPSocket, given_initial_tours::Vector{Int64}, start_time_for_tour_history::UInt64, inf_val::Int64, evaluated_edges::Vector{Tuple{Int64, Int64}}, open_tsp::Bool, num_vertices::Int64, num_sets::Int64, sets::Vector{Vector{Int64}}, dist::Matrix{Int64}, membership::Vector{Int64}, instance_read_time::Float64, cost_mat_read_time::Float64, run_perf::Bool=false, perf_file::String=""; args...)
-  # println("This is a fork of GLNS allowing for lazy edge evaluation")
+function solver(problem_instance::String, given_initial_tours::Vector{Int64}, start_time_for_tour_history::UInt64, inf_val::Int64, num_vertices::Int64, num_sets::Int64, sets::Vector{Vector{Int64}}, dist::Matrix{Int64}, membership::Vector{Int64}, instance_read_time::Float64, cost_mat_read_time::Float64; args...)
   Random.seed!(1234)
 
+  pinthreads(:cores)
+
 	param = parameter_settings(num_vertices, num_sets, sets, problem_instance, args)
+  @assert(param[:budget] == typemin(Int64))
   if length(given_initial_tours) != 0
     @assert(length(given_initial_tours)%num_sets == 0)
     param[:cold_trials] = div(length(given_initial_tours), num_sets)
   end
 	#####################################################
 	init_time = time()
-
-  if param[:lazy_edge_eval] == 1
-    confirmed_dist = zeros(Bool, size(dist, 1), size(dist, 2))
-    for edge in evaluated_edges
-      confirmed_dist[edge[1], edge[2]] = true
-    end
-    confirmed_dist[dist .== inf_val] .= true
-    if open_tsp
-      confirmed_dist[1:end, 1] .= true
-    end
-  else
-    confirmed_dist = zeros(Bool, 1, 1)
-  end
 
 	count = Dict(:latest_improvement => 1,
 	  			 :first_improvement => false,
@@ -61,38 +50,41 @@ function solver(problem_instance::String, client_socket::TCPSocket, given_initia
 				 :print_time => init_time)
 	lowest = Tour(Int64[], typemax(Int64))
 
-  # Perf code
-  perf_pid = -1
-  if run_perf && occursin("custom0", problem_instance)
-    @assert(length(perf_file) != 0)
-    pid = string(getpid())
-    # timestr = string(time())
-    # Assumes we're just storing in the local directory so there aren't any slashes in the output file name. Also assumes perf_data has been created
-    num = 0
-    # cmd = `perf stat -p $pid -M tma_dram_bound,tma_l1_bound,tma_l2_bound,tma_l3_bound -e cache-references,cache-misses,L1-dcache-load-misses,L1-dcache-loads,L1-dcache-stores,L1-icache-load-misses,l2_rqsts.miss,l2_rqsts.references,LLC-loads,LLC-load-misses,LLC-stores,LLC-store-misses -o $perf_file`
-    # cmd = `perf stat -p $pid -M tma_dram_bound,tma_l1_bound,tma_l2_bound,tma_l3_bound -e cache-references,cache-misses,L1-dcache-load-misses,L1-dcache-loads,L1-dcache-stores,L1-icache-load-misses,l2_rqsts.miss,l2_rqsts.references,LLC-loads,LLC-load-misses,LLC-stores,LLC-store-misses,offcore_response.pf_l1d_and_sw.l3_hit.any_snoop -o $perf_file`
-    # cmd = `perf stat -p $pid -M tma_dram_bound,tma_l1_bound,tma_l2_bound,tma_l3_bound -e L1-dcache-load-misses,L1-dcache-loads,l2_rqsts.all_demand_data_rd,l2_rqsts.demand_data_rd_miss,LLC-loads,LLC-load-misses -o $perf_file`
-    # cmd = `perf stat -p $pid -M tma_l1_bound -o $perf_file`
-    # cmd = `perf stat -p $pid -M tma_dram_bound,tma_l1_bound,tma_l2_bound,tma_l3_bound -o $perf_file`
-    # cmd = `perf stat -p $pid -M tma_l1_bound -e L1-dcache-load-misses,L1-dcache-loads -o $perf_file`
-    # cmd = `perf stat -p $pid -e L1-dcache-load-misses,L1-dcache-loads,offcore_response.pf_l1d_and_sw.l3_hit.any_snoop,offcore_response.pf_l1d_and_sw.l3_miss.any_snoop -o $perf_file`
-    cmd = `perf stat -p $pid -M tma_l1_bound,tma_l2_bound,tma_l3_bound,tma_dram_bound -e LLC-loads,LLC-load-misses -o $perf_file`
-    perf_proc = run(pipeline(cmd, stdout=stdout, stderr=stdout); wait=false)
-    perf_pid = getpid(perf_proc)
-    # sleep(1)
-  end
-
 	start_time = time_ns()
 	# compute set distances which will be helpful
 	setdist = set_vertex_dist(dist, num_sets, membership)
 	powers = initialize_powers(param)
+  
+  sets_unshuffled = deepcopy(sets)
 
   tour_history = Array{Tuple{Float64, Array{Int64,1}, Int64},1}()
   num_trials_feasible = 0
   num_trials = 0
+  num_trials_lock = ReentrantLock()
 
+  set_locks = [ReentrantLock() for set=sets]
+
+  nthreads = Threads.nthreads()
+  # rngs = [Future.randjump(Random.default_rng(), thread_idx*big(10)^20) for thread_idx=1:nthreads]
+
+  powers_lock = ReentrantLock()
+  best_lock = ReentrantLock()
+  current_lock = ReentrantLock()
+
+  phase_lock = ReentrantLock()
+
+  count_lock = ReentrantLock()
+
+  iter_count_lock = ReentrantLock()
+
+  temperature_lock = ReentrantLock()
+
+  @batch for thread_idx=1:nthreads
+    Random.seed!(1234 + thread_idx) # TODO: replace with the rngs from Future.randjump
+  end
+
+  @assert(param[:cold_trials] == 1) # I'm not sure what's the best way to handle more than 1 cold trial with PALNS yet
 	while count[:cold_trial] <= param[:cold_trials]
-		# build tour from scratch on a cold restart
     if length(given_initial_tours) != 0
       start_idx = (count[:cold_trial] - 1)*num_sets + 1
       end_idx = count[:cold_trial]*num_sets
@@ -100,7 +92,7 @@ function solver(problem_instance::String, client_socket::TCPSocket, given_initia
     else
       initial_tour = given_initial_tours
     end
-    best = initial_tour!(lowest, dist, sets, setdist, count[:cold_trial], param, confirmed_dist, client_socket, num_sets, membership, initial_tour)
+    best = initial_tour!(lowest, dist, sets, setdist, count[:cold_trial], param, num_sets, membership, initial_tour)
     timer = (time_ns() - start_time)/1.0e9
 		# print_cold_trial(count, param, best)
 		phase = :early
@@ -111,127 +103,173 @@ function solver(problem_instance::String, client_socket::TCPSocket, given_initia
 			power_update!(powers, param)
 		end
 
-		while count[:warm_trial] <= param[:warm_trials]
-			iter_count = 1
-			current = Tour(copy(best.tour), best.cost)
-			temperature = 1.442 * param[:accept_percentage] * best.cost
-			# accept a solution with 50% higher cost with 0.05% change after num_iterations.
-			cooling_rate = ((0.0005 * lowest.cost)/(param[:accept_percentage] *
-									current.cost))^(1/param[:num_iterations])
+    while count[:warm_trial] <= param[:warm_trials]
+      iter_count = 1
+      current = Tour(copy(best.tour), best.cost)
+      temperature = 1.442 * param[:accept_percentage] * best.cost
+      # accept a solution with 50% higher cost with 0.05% change after num_iterations.
+      cooling_rate = ((0.0005 * lowest.cost)/(param[:accept_percentage] *
+                  current.cost))^(1/param[:num_iterations])
 
-			if count[:warm_trial] > 0	  # if warm restart, then use lower temperature
+      if count[:warm_trial] > 0	  # if warm restart, then use lower temperature
         temperature *= cooling_rate^(param[:num_iterations]/2)
-				phase = :late
-			end
-			while count[:latest_improvement] <= (count[:first_improvement] ?
-                                           param[:latest_improvement] : param[:first_improvement])
-
-				if iter_count > param[:num_iterations]/2 && phase == :early
-					phase = :mid  # move to mid phase after half iterations
-				end
-				trial = remove_insert(current, best, dist, membership, setdist, sets, powers, param, phase)
-
-				if trial.cost < best.cost
-          if param[:lazy_edge_eval] == 1
-            eval_edges!(trial, dist, confirmed_dist, client_socket, setdist, num_sets, membership)
-          end
-		    end
-
-        trial_infeasible = dist[trial.tour[end], trial.tour[1]] == inf_val
-        @inbounds for i in 1:length(trial.tour)-1
-          if trial_infeasible
+        phase = :late
+      end
+      this_phase = phase
+      @batch for thread_idx=1:nthreads
+        this_num_trials_feasible = 0
+        this_num_trials = 0
+        while true
+          if @lock count_lock (count[:latest_improvement] > (count[:first_improvement] ?
+                                                             param[:latest_improvement] : param[:first_improvement]))
             break
           end
-          trial_infeasible = dist[trial.tour[i], trial.tour[i+1]] == inf_val
-        end
-        if ~trial_infeasible
-          num_trials_feasible += 1
-        end
-        num_trials += 1
 
-        # decide whether or not to accept trial
-				if accepttrial_noparam(trial.cost, current.cost, param[:prob_accept]) ||
-				   accepttrial(trial.cost, current.cost, temperature)
-					param[:mode] == "slow" && opt_cycle!(current, dist, sets, membership, param, setdist, "full") # This seems incorrect. Why are we optimizing current, then setting current = trial?
-				  current = trial
-		    end
+          this_iter_count = 0
+          @lock iter_count_lock this_iter_count = iter_count
 
-		    if current.cost < best.cost
-					count[:latest_improvement] = 1
-					count[:first_improvement] = true
-					if count[:cold_trial] > 1 && count[:warm_trial] > 1
-						count[:warm_trial] = 1
-					end
-					best = current
-          prev_best_cost = best.cost
-          prev_best_tour = best.tour
-					opt_cycle!(best, dist, sets, membership, param, setdist, "full")
-          if param[:lazy_edge_eval] == 1
-            eval_edges!(best, dist, confirmed_dist, client_socket, setdist, num_sets, membership)
-            if best.cost > prev_best_cost
-              best.cost = prev_best_cost
-              best.tour = prev_best_tour
+          this_phase
+          lock(phase_lock)
+          try
+            if this_iter_count > param[:num_iterations]/2 && phase == :early
+              phase = :mid  # move to mid phase after half iterations
+            end
+            this_phase = phase
+          finally
+            unlock(phase_lock)
+          end
+          trial = remove_insert(current, dist, membership, setdist, sets, sets_unshuffled, powers, param, this_phase, powers_lock, current_lock, set_locks)
+
+          trial_infeasible = dist[trial.tour[end], trial.tour[1]] == inf_val
+          @inbounds for i in 1:length(trial.tour)-1
+            if trial_infeasible
+              break
+            end
+            trial_infeasible = dist[trial.tour[i], trial.tour[i+1]] == inf_val
+          end
+          if ~trial_infeasible
+            this_num_trials_feasible += 1
+          end
+          this_num_trials += 1
+
+          # decide whether or not to accept trial
+          this_temperature = 0.
+          lock(temperature_lock)
+          try
+            this_temperature = temperature
+          finally
+            unlock(temperature_lock)
+          end
+
+          lock(current_lock)
+          try
+            if accepttrial_noparam(trial.cost, current.cost, param[:prob_accept]) ||
+               accepttrial(trial.cost, current.cost, temperature)
+              @assert(param[:mode] != "slow") # I don't want to perform an opt cycle while something is locked
+              param[:mode] == "slow" && opt_cycle!(current, dist, sets_unshuffled, membership, param, setdist, "full") # This seems incorrect. Why are we optimizing current, then setting current = trial?
+              current = trial
+            else
+              trial = Tour(copy(current.tour), current.cost)
+            end
+          finally
+            unlock(current_lock)
+          end
+
+          updated_best = false
+          lock(best_lock)
+          try
+            if trial.cost < best.cost
+              updated_best = true
+              best = Tour(copy(trial.tour), trial.cost)
+              @printf("Found new best tour after %f s with cost %d\n", timer, best.cost)
+            end
+          finally
+            unlock(best_lock)
+          end
+
+          lock(count_lock)
+          try
+            if updated_best
+              count[:latest_improvement] = 1
+              count[:first_improvement] = true
+              if count[:cold_trial] > 1 && count[:warm_trial] > 1
+                count[:warm_trial] = 1
+              end
+            else
+              count[:latest_improvement] += 1
+            end
+          finally
+            unlock(count_lock)
+          end
+
+          if updated_best
+            opt_cycle!(trial, dist, sets_unshuffled, membership, param, setdist, "full")
+
+            lock(best_lock)
+            try
+              if trial.cost < best.cost
+                best = Tour(copy(trial.tour), trial.cost)
+                # print_best(count, param, best, lowest, init_time)
+                timer = (time_ns() - start_time)/1.0e9
+                @printf("Found new best tour after %f s with cost %d\n", timer, best.cost)
+
+                if param[:output_file] != "None"
+                  push!(tour_history, (round((time_ns() - start_time_for_tour_history)/1.0e9, digits=3), best.tour, best.cost))
+                end
+              end
+            finally
+              unlock(best_lock)
             end
           end
-	      else
-					count[:latest_improvement] += 1
-				end
 
-				# if we've come in under budget, or we're out of time, then exit
-			  if best.cost <= param[:budget] || time() - init_time > param[:max_time]
-					param[:timeout] = (time() - init_time > param[:max_time])
-					param[:budget_met] = (best.cost <= param[:budget])
-					timer = (time_ns() - start_time)/1.0e9
-					lowest.cost > best.cost && (lowest = best)
-          if param[:output_file] != "None"
-            push!(tour_history, (round((time_ns() - start_time_for_tour_history)/1.0e9, digits=3), lowest.tour, lowest.cost))
+          lock(temperature_lock)
+          try
+            temperature *= cooling_rate  # cool the temperature
+          finally
+            unlock(temperature_lock)
+          end
+          lock(iter_count_lock)
+          try
+            iter_count += 1
+            count[:total_iter] += 1
+          finally
+            lock(iter_count_lock)
           end
 
-          if run_perf && occursin("custom0", problem_instance)
-            @assert(perf_pid != -1)
-            run(`kill -2 $perf_pid`)
+          if time() - init_time > param[:max_time]
+            break
           end
-
-					print_best(count, param, best, lowest, init_time)
-					print_summary(lowest, timer, membership, param, tour_history, cost_mat_read_time, instance_read_time, num_trials_feasible, num_trials, true)
-          return
-				end
-
-		    temperature *= cooling_rate  # cool the temperature
-				iter_count += 1
-				count[:total_iter] += 1
-
-        if (length(tour_history) == 0 || (best.cost < tour_history[end][3])) && param[:output_file] != "None"
-          timer = (time_ns() - start_time)/1.0e9
-          push!(tour_history, (round((time_ns() - start_time_for_tour_history)/1.0e9, digits=3), best.tour, best.cost))
-          # println("Printing tour history")
-          # println(tour_history)
         end
+        lock(num_trials_lock)
+        try
+          num_trials += this_num_trials
+          num_trials_feasible += this_num_trials_feasible
+        finally
+          unlock(num_trials_lock)
+        end
+      end
+      print_warm_trial(count, param, best, iter_count)
+      count[:warm_trial] += 1
+      count[:latest_improvement] = 1
+      count[:first_improvement] = false
 
-				print_best(count, param, best, lowest, init_time)
-			end
-			print_warm_trial(count, param, best, iter_count)
-			# on the first cold trial, we are just determining
-			count[:warm_trial] += 1
-			count[:latest_improvement] = 1
-			count[:first_improvement] = false
-		end
+      if time() - init_time > param[:max_time]
+        param[:timeout] = true
+        break
+      end
+    end
 		lowest.cost > best.cost && (lowest = best)
 		count[:warm_trial] = 0
 		count[:cold_trial] += 1
-
-		# print_powers(powers)
-
+    if time() - init_time > param[:max_time]
+      break
+    end
 	end
 	timer = (time_ns() - start_time)/1.0e9
   if param[:output_file] != "None"
     push!(tour_history, (round((time_ns() - start_time_for_tour_history)/1.0e9, digits=3), lowest.tour, lowest.cost))
   end
 
-  if run_perf && occursin("custom0", problem_instance)
-    @assert(perf_pid != -1)
-    run(`kill -2 $perf_pid`)
-  end
   print_summary(lowest, timer, membership, param, tour_history, cost_mat_read_time, instance_read_time, num_trials_feasible, num_trials, false)
 end
 
@@ -290,7 +328,7 @@ function parse_cmd(ARGS)
 	return filename, optional_args
 end
 
-function main(args::Vector{String}, max_time::Float64, inf_val::Int64, given_initial_tours::Vector{Int64}, do_perf::Bool, perf_file::String, dist::Matrix{Int64})
+function main(args::Vector{String}, max_time::Float64, inf_val::Int64, given_initial_tours::Vector{Int64}, dist::Matrix{Int64})
   start_time_for_tour_history = time_ns()
   problem_instance, optional_args = parse_cmd(args)
   problem_instance = String(problem_instance)
@@ -304,9 +342,6 @@ function main(args::Vector{String}, max_time::Float64, inf_val::Int64, given_ini
 
   optional_args[Symbol("max_time")] = max_time
 
-  evaluated_edges = Vector{Tuple{Int64, Int64}}()
-  open_tsp = false
-
   read_start_time = time_ns()
   num_vertices, num_sets, sets, membership = read_file(problem_instance)
   read_end_time = time_ns()
@@ -315,7 +350,7 @@ function main(args::Vector{String}, max_time::Float64, inf_val::Int64, given_ini
 
   cost_mat_read_time = 0.
 
-  GLNS.solver(problem_instance, TCPSocket(), given_initial_tours, start_time_for_tour_history, inf_val, evaluated_edges, open_tsp, num_vertices, num_sets, sets, dist, membership, instance_read_time, cost_mat_read_time, do_perf, perf_file; optional_args...)
+  GLNS.solver(problem_instance, given_initial_tours, start_time_for_tour_history, inf_val, num_vertices, num_sets, sets, dist, membership, instance_read_time, cost_mat_read_time; optional_args...)
 end
 
 end

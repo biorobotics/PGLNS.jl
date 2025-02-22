@@ -19,10 +19,10 @@ its weight, and its score on the last segment
 """
 mutable struct Power
 	name::String
-	value::Float64
+	value::Float64 # log_{0.5}(lambda)
 	weight::Dict{Symbol, Float64}
 	scores::Dict{Symbol, Float64}
-	count::Dict{Symbol, Int64}
+	count::Dict{Symbol, Int64} # Number of times used in a particular phase (phase is the Dict key)
 end
 
 
@@ -128,11 +128,11 @@ function power_select(powers, total_weight, phase::Symbol)
 	selection = rand()*total_weight[phase]
 	for i = 1:length(powers)
 		if selection < powers[i].weight[phase]
-			return powers[i]
+			return i
 		end
 		selection -= powers[i].weight[phase]
 	end
-	return powers[1]  # should never hit this case, but if you do, return first bin?
+	return 1  # should never hit this case, but if you do, return first bin?
 end
 
 

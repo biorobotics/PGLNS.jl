@@ -16,7 +16,7 @@
 
 using Sockets
 import Pkg
-# Pkg.activate(expanduser("~/GLNS_lazy_edge_eval.jl"))
+Pkg.activate(".")
 using GLNS
 using Printf
 using NPZ

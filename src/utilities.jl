@@ -16,6 +16,8 @@
 #####################################################
 #########  GTSP Utilities ###########################
 
+using Base.Threads
+
 """ tour type that stores the order array and the length of the tour
 """
 mutable struct Tour
@@ -40,9 +42,9 @@ function pivot_tour!(tour::Array{Int64,1})
 end
 
 
-function randomize_sets!(sets::Vector{Vector{Int64}}, sets_to_insert::Array{Int64, 1})
+function randomize_sets!(sets::Vector{Vector{Int64}}, sets_to_insert::Array{Int64, 1}, set_locks::Vector{ReentrantLock})
 	for i in sets_to_insert
-		shuffle!(sets[i])
+    @lock set_locks[i] shuffle!(sets[i])
 	end
 end
 
@@ -204,7 +206,7 @@ end
 end
 
 """  Compute the length of a tour  """
-@inline function tour_cost(tour::Array{Int64,1}, dist::Array{Int64,2})
+@inline function tour_cost(tour::Array{Int64,1}, dist)
     tour_length = dist[tour[end], tour[1]]
     @inbounds for i in 1:length(tour)-1
     	tour_length += dist[tour[i], tour[i+1]]
