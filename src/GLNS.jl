@@ -261,6 +261,8 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
   end
 
   print_summary(lowest, timer, membership, param, tour_history, cost_mat_read_time, instance_read_time, num_trials_feasible, num_trials, false)
+
+  @assert(lowest.cost == tour_cost(lowest.tour, dist))
 end
 
 function parse_cmd(ARGS)
