@@ -175,7 +175,7 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
             if trial.cost < best.cost
               updated_best = true
               best = tour_copy(trial)
-              @printf("Thread %d found new best tour after %f s with cost %d\n", thread_idx, timer, best.cost)
+              println("Thread ", thread_idx, " found new best tour after ", timer, " s with cost ", best.cost)
             end
           finally
             unlock(best_lock)
@@ -205,7 +205,7 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
                 best = tour_copy(trial)
                 # print_best(count, param, best, lowest, init_time)
                 timer = (time_ns() - start_time)/1.0e9
-                @printf("Found new best tour after %f s with cost %d\n", timer, best.cost)
+                println("Thread ", thread_idx, " found new best tour after ", timer, " s with cost ", best.cost)
 
                 if param[:output_file] != "None"
                   push!(tour_history, (round((time_ns() - start_time_for_tour_history)/1.0e9, digits=3), best.tour, best.cost))
@@ -339,7 +339,7 @@ function main(args::Vector{String}, max_time::Float64, inf_val::Int64, given_ini
   num_vertices, num_sets, sets, membership = read_file(problem_instance)
   read_end_time = time_ns()
   instance_read_time = (read_end_time - read_start_time)/1.0e9
-  @printf("Reading GTSPLIB file took %f s\n", instance_read_time)
+  println("Reading GTSPLIB file took ", instance_read_time, " s")
 
   cost_mat_read_time = 0.
 

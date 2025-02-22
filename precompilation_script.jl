@@ -33,7 +33,6 @@ function main()
 
   for i=1:2
     ARGS = ["/home/cobra/GLKH-1.1/GTSPLIB/"*instance_folder*"/custom"*string(i)*".gtsp", "-output=custom.tour", "-socket_port=65432", "-lazy_edge_eval=0", "-new_socket_each_instance=0", "-verbose=3", "-mode=fast"]
-    given_intial_tours = Vector{Int64}()
 
     problem_instance, optional_args = GLNS.parse_cmd(ARGS)
     problem_instance = String(problem_instance)

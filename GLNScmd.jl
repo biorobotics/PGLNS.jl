@@ -46,15 +46,15 @@ function main()
     PORT = 65432
   end
 
-  @printf("Server attempting to listen on port %d\n", PORT)
+  println("Server attempting to listen on port ", PORT)
   server = TCPSocket()
   try
     server = listen(PORT)
   catch e
-    @printf("Server on port %d failed to listen\n", PORT)
+    println("Server on port ", PORT, " failed to listen")
     exit()
   end
-  @printf("Server listening on port %d\n", PORT)
+  println("Server listening on port ", PORT)
 
   client_socket = accept(server)
 
@@ -67,7 +67,7 @@ function main()
       msg = readline(client_socket)
       start_time_for_tour_history = time_ns()
       if msg == "terminate"
-        @printf("Server on port %d received termination signal", PORT)
+        println("Server on port ", PORT, " received termination signal")
         break
       end
       if length(msg) == 0
@@ -90,7 +90,7 @@ function main()
       num_vertices, num_sets, sets, membership = read_file(problem_instance)
       read_end_time = time_ns()
       instance_read_time = (read_end_time - read_start_time)/1.0e9
-      @printf("Reading GTSPLIB file took %f s\n", instance_read_time)
+      println("Reading GTSPLIB file took ", instance_read_time, " s")
 
       # Read cost matrix from npy file
       read_start_time = time_ns()
@@ -98,7 +98,7 @@ function main()
       dist = npzread(npyfile)
       read_end_time = time_ns()
       cost_mat_read_time = (read_end_time - read_start_time)/1.0e9
-      @printf("Reading cost mat file took %f s\n", cost_mat_read_time)
+      println("Reading cost mat file took ", cost_mat_read_time, " s")
 
       GLNS.solver(problem_instance, given_initial_tours, start_time_for_tour_history, inf_val, num_vertices, num_sets, sets, dist, membership, instance_read_time, cost_mat_read_time; optional_args...)
       write(client_socket, "solved\n")
@@ -106,7 +106,7 @@ function main()
     end
   finally
     close(server)
-    @printf("Closed server on port %d\n", PORT)
+    println("Closed server on port ", PORT)
   end
 end
 
