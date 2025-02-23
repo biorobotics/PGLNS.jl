@@ -62,6 +62,12 @@ function remove_insert(current::Tour, dist, member,
 
   randomize_sets!(sets, sets_to_insert, set_locks)
 
+  # Need to sample a insertion heuristic and noise here to match GLNS
+  # insertion_idx = power_select(powers["insertions"], powers["insertion_total"], phase)
+  # noise_idx = power_select(powers["noise"], powers["noise_total"], phase)
+  # insertion = powers["insertions"][insertion_idx]
+  # noise = powers["noise"][noise_idx]
+
 	# then perform insertion
 	if insertion.name == "cheapest"
 		cheapest_insertion!(trial.tour, sets_to_insert, dist, setdist, sets_unshuffled)

@@ -56,6 +56,7 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
 	powers = initialize_powers(param)
   
   sets_unshuffled = deepcopy(sets)
+  # sets_unshuffled = sets # Need to use this to match GLNS
 
   tour_history = Array{Tuple{Float64, Array{Int64,1}, Int64},1}()
   num_trials_feasible = 0
@@ -78,10 +79,6 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
   iter_count_lock = ReentrantLock()
 
   temperature_lock = ReentrantLock()
-
-  @threads for thread_idx=1:nthreads
-    Random.seed!(1234 + thread_idx) # TODO: replace with the rngs from Future.randjump
-  end
 
   @assert(param[:cold_trials] == 1) # I'm not sure what's the best way to handle more than 1 cold trial with PALNS yet
 	while count[:cold_trial] <= param[:cold_trials]
@@ -117,6 +114,7 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
       end
       this_phase = phase
       @threads for thread_idx=1:nthreads
+      # for thread_idx=1:1 # Need to use this to match GLNS
         this_num_trials_feasible = 0
         this_num_trials = 0
         while true
@@ -175,7 +173,7 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
             if trial.cost < best.cost
               updated_best = true
               best = tour_copy(trial)
-              println("Thread ", thread_idx, " found new best tour after ", timer, " s with cost ", best.cost)
+              println("Thread ", thread_idx, " found new best tour after ", timer, " s with cost ", best.cost, " (before opt cycle)")
             end
           finally
             unlock(best_lock)
@@ -213,6 +211,15 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
               end
             finally
               unlock(best_lock)
+            end
+
+            lock(current_lock)
+            try
+              if trial.cost < current.cost
+                current = tour_copy(trial)
+              end
+            finally
+              unlock(current_lock)
             end
           end
 
