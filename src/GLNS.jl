@@ -80,7 +80,6 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
 
   temperature_lock = ReentrantLock()
 
-  @assert(param[:cold_trials] == 1) # I'm not sure what's the best way to handle more than 1 cold trial with PALNS yet
 	while count[:cold_trial] <= param[:cold_trials]
     if length(given_initial_tours) != 0
       start_idx = (count[:cold_trial] - 1)*num_sets + 1
