@@ -45,10 +45,12 @@ function remove_insert(current::Tour, dist, member,
     end
   else
     removal_idx = power_select(powers["removals"], powers["removal_total"], phase)
+    # Comment out the following two lines to match GLNS
     insertion_idx = power_select(powers["insertions"], powers["insertion_total"], phase)
     noise_idx = power_select(powers["noise"], powers["noise_total"], phase)
   end
   removal = powers["removals"][removal_idx]
+  # Comment out the following two lines to match GLNS
   insertion = powers["insertions"][insertion_idx]
   noise = powers["noise"][noise_idx]
 	if removal.name == "distance"
@@ -63,7 +65,7 @@ function remove_insert(current::Tour, dist, member,
 
   randomize_sets!(sets, sets_to_insert, set_locks)
 
-  # Need to sample a insertion heuristic and noise here to match GLNS
+  # Uncomment the following four lines to match GLNS
   # insertion_idx = power_select(powers["insertions"], powers["insertion_total"], phase)
   # noise_idx = power_select(powers["noise"], powers["noise_total"], phase)
   # insertion = powers["insertions"][insertion_idx]
@@ -184,7 +186,7 @@ end
 
 
 function cheapest_insertion!(tour::Array{Int64,1}, sets_to_insert::Array{Int64,1},
-	dist, setdist::Distsv, sets::Vector{Vector{Int64}}, sets_lock::ReentrantLock)
+	dist, setdist::Distsv, sets::Vector{Vector{Int64}})
     """
 	choose vertex that can be inserted most cheaply, and insert it in that position
 	"""
@@ -285,7 +287,7 @@ function initial_tour!(lowest::Tour, dist::Array{Int64, 2}, sets::Vector{Vector{
     for node_idx in given_initial_tour
       push!(best.tour, node_idx)
     end
-	elseif true
+	elseif false
     best.tour = dag_dfs(dist, sets, member, inf_val, stop_time)
 	elseif param[:init_tour] == "rand" && (trial_num > 1) && (rand() < 0.5)
 		random_initial_tour!(best.tour, sets_to_insert, dist, sets)
@@ -316,7 +318,7 @@ function random_insertion!(tour::Array{Int64,1}, sets_to_insert::Array{Int64,1},
             best_vertex = rand(sets[set])
             best_position = 1
         else
-            best_vertex, best_position = insert_lb(tour, dist, sets[set], set, setdist, 0.75)
+            best_vertex, best_position = insert_lb(tour, dist, sets[set], set, setdist, 0.75, ReentrantLock())
         end
         # now, perform the insertion
         insert!(tour, best_position, best_vertex)

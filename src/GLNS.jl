@@ -156,7 +156,7 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
           lock(current_lock)
           try
             if accepttrial_noparam(trial.cost, current.cost, param[:prob_accept]) ||
-               accepttrial(trial.cost, current.cost, temperature)
+               accepttrial(trial.cost, current.cost, this_temperature)
               @assert(param[:mode] != "slow") # I don't want to perform an opt cycle while something is locked
               param[:mode] == "slow" && opt_cycle!(current, dist, sets_unshuffled, membership, param, setdist, "full") # This seems incorrect. Why are we optimizing current, then setting current = trial?
               current = tour_copy(trial)
@@ -328,29 +328,32 @@ function parse_cmd(ARGS)
 	return filename, optional_args
 end
 
-function main(args::Vector{String}, max_time::Float64, inf_val::Int64, given_initial_tours::Vector{Int64}, dist::Matrix{Int64})
+function main(args::Vector{String}, max_time::Float64, given_initial_tours::Vector{Int64}, npy_dist::Bool)
   start_time_for_tour_history = time_ns()
   problem_instance, optional_args = parse_cmd(args)
   problem_instance = String(problem_instance)
 
-	output_file = get(optional_args, :output, "None")
-  if output_file != "None"
-    f = open(output_file, "w")
-    write(f, "\n")
-    close(f)
-  end
-
   optional_args[Symbol("max_time")] = max_time
 
   read_start_time = time_ns()
-  num_vertices, num_sets, sets, _, membership = read_file(problem_instance, false)
+  num_vertices, num_sets, sets, dist, membership = read_file(problem_instance, !npy_dist)
   read_end_time = time_ns()
   instance_read_time = (read_end_time - read_start_time)/1.0e9
   println("Reading GTSPLIB file took ", instance_read_time, " s")
 
   cost_mat_read_time = 0.
+  if npy_dist
+    read_start_time = time_ns()
+    npyfile = first(problem_instance, length(problem_instance) - length(".gtsp")) * ".npy"
+    dist = npzread(npyfile)
+    read_end_time = time_ns()
+    cost_mat_read_time = (read_end_time - read_start_time)/1.0e9
+  end
 
-  GLNS.solver(problem_instance, given_initial_tours, start_time_for_tour_history, inf_val, num_vertices, num_sets, sets, dist, membership, instance_read_time, cost_mat_read_time; optional_args...)
+  inf_val = maximum(dist)
+  # dist[dist .!= inf_val] .= 0
+
+  @time GLNS.solver(problem_instance, given_initial_tours, start_time_for_tour_history, inf_val, num_vertices, num_sets, sets, dist, membership, instance_read_time, cost_mat_read_time; optional_args...)
 end
 
 end
