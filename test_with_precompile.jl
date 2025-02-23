@@ -29,14 +29,15 @@ function main()
   # Should be in the /home/cobra/GLKH-1.1/GTSPLIB folder
   instance_folder = "debug"
 
-  for i=1:2
-    ARGS = ["/home/cobra/GLKH-1.1/GTSPLIB/"*instance_folder*"/custom"*string(i)*".gtsp", "-output=custom.tour", "-socket_port=65432", "-lazy_edge_eval=0", "-new_socket_each_instance=0", "-verbose=3", "-mode=fast"]
+  # for i=1:2
+  for i=0:0
+    ARGS = ["/home/noopygbhat/GLKH-1.1/GTSPLIB/"*instance_folder*"/custom"*string(i)*".gtsp", "-output=custom.tour", "-socket_port=65432", "-lazy_edge_eval=0", "-new_socket_each_instance=0", "-verbose=3", "-mode=fast"]
 
     problem_instance, optional_args = GLNS.parse_cmd(ARGS)
     problem_instance = String(problem_instance)
 
     read_start_time = time_ns()
-    num_vertices, num_sets, sets, membership = read_file(problem_instance)
+    num_vertices, num_sets, sets, _, membership = read_file(problem_instance, false)
     read_end_time = time_ns()
     instance_read_time = (read_end_time - read_start_time)/1.0e9
 
