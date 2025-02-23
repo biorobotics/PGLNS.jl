@@ -34,7 +34,6 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
   pinthreads(:cores)
 
 	param = parameter_settings(num_vertices, num_sets, sets, problem_instance, args)
-  @assert(param[:budget] == typemin(Int64))
   if length(given_initial_tours) != 0
     @assert(length(given_initial_tours)%num_sets == 0)
     param[:cold_trials] = div(length(given_initial_tours), num_sets)
@@ -80,7 +79,11 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
 
   temperature_lock = ReentrantLock()
 
-	while count[:cold_trial] <= param[:cold_trials]
+	while true
+    if count[:cold_trial] > param[:cold_trials] && lowest.cost <= param[:budget]
+      break
+    end
+
     if length(given_initial_tours) != 0
       start_idx = (count[:cold_trial] - 1)*num_sets + 1
       end_idx = count[:cold_trial]*num_sets
@@ -270,6 +273,7 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
 
   @assert(lowest.cost == tour_cost(lowest.tour, dist))
   @assert(length(lowest.tour) == num_sets)
+  return lowest.cost
 end
 
 function parse_cmd(ARGS)
@@ -354,7 +358,9 @@ function main(args::Vector{String}, max_time::Float64, given_initial_tours::Vect
   inf_val = maximum(dist)
   # dist[dist .!= inf_val] .= 0
 
-  @time GLNS.solver(problem_instance, given_initial_tours, start_time_for_tour_history, inf_val, num_vertices, num_sets, sets, dist, membership, instance_read_time, cost_mat_read_time, max_threads; optional_args...)
+  timing_result = @timed GLNS.solver(problem_instance, given_initial_tours, start_time_for_tour_history, inf_val, num_vertices, num_sets, sets, dist, membership, instance_read_time, cost_mat_read_time, max_threads; optional_args...)
+  println(timing_result)
+  return timing_result.value
 end
 
 end
