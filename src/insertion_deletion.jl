@@ -83,6 +83,7 @@ function remove_insert(current::Tour, dist, member,
 	# update power scores for remove and insert
   # not needed if we're only doing 1 cold trial
   if param[:cold_trials] != 1
+    score = 0.
     @lock current_lock score = 100 * max(current.cost - trial.cost, 0)/current.cost
     lock(powers_lock)
     try
