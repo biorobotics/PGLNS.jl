@@ -28,7 +28,7 @@ include("adaptive_powers.jl")
 include("insertion_deletion.jl")
 include("parameter_defaults.jl")
 
-function solver(problem_instance::String, given_initial_tours::Vector{Int64}, start_time_for_tour_history::UInt64, inf_val::Int64, num_vertices::Int64, num_sets::Int64, sets::Vector{Vector{Int64}}, dist::Matrix{Int64}, membership::Vector{Int64}, instance_read_time::Float64, cost_mat_read_time::Float64; args...)
+function solver(problem_instance::String, given_initial_tours::Vector{Int64}, start_time_for_tour_history::UInt64, inf_val::Int64, num_vertices::Int64, num_sets::Int64, sets::Vector{Vector{Int64}}, dist::Matrix{Int64}, membership::Vector{Int64}, instance_read_time::Float64, cost_mat_read_time::Float64, max_threads::Int64; args...)
   Random.seed!(1234)
 
   pinthreads(:cores)
@@ -65,7 +65,7 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
 
   set_locks = [ReentrantLock() for set=sets]
 
-  nthreads = Threads.nthreads()
+  nthreads = min(Threads.nthreads(), max_threads)
   # rngs = [Future.randjump(Random.default_rng(), thread_idx*big(10)^20) for thread_idx=1:nthreads]
 
   powers_lock = ReentrantLock()
@@ -327,12 +327,14 @@ function parse_cmd(ARGS)
 	return filename, optional_args
 end
 
-function main(args::Vector{String}, max_time::Float64, given_initial_tours::Vector{Int64}, npy_dist::Bool)
+function main(args::Vector{String}, max_time::Float64, given_initial_tours::Vector{Int64}, npy_dist::Bool, max_threads::Int64)
   start_time_for_tour_history = time_ns()
   problem_instance, optional_args = parse_cmd(args)
   problem_instance = String(problem_instance)
 
-  optional_args[Symbol("max_time")] = max_time
+  if max_time >= 0
+    optional_args[Symbol("max_time")] = max_time
+  end
 
   read_start_time = time_ns()
   num_vertices, num_sets, sets, dist, membership = read_file(problem_instance, !npy_dist)
@@ -352,7 +354,7 @@ function main(args::Vector{String}, max_time::Float64, given_initial_tours::Vect
   inf_val = maximum(dist)
   # dist[dist .!= inf_val] .= 0
 
-  @time GLNS.solver(problem_instance, given_initial_tours, start_time_for_tour_history, inf_val, num_vertices, num_sets, sets, dist, membership, instance_read_time, cost_mat_read_time; optional_args...)
+  @time GLNS.solver(problem_instance, given_initial_tours, start_time_for_tour_history, inf_val, num_vertices, num_sets, sets, dist, membership, instance_read_time, cost_mat_read_time, max_threads; optional_args...)
 end
 
 end
