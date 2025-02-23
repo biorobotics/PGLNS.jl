@@ -89,7 +89,7 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
     else
       initial_tour = given_initial_tours
     end
-    best = initial_tour!(lowest, dist, sets, setdist, count[:cold_trial], param, num_sets, membership, initial_tour)
+    best = initial_tour!(lowest, dist, sets, setdist, count[:cold_trial], param, num_sets, membership, initial_tour, inf_val, init_time + param[:max_time])
     timer = (time_ns() - start_time)/1.0e9
 		# print_cold_trial(count, param, best)
 		phase = :early

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 using Base.Threads
+include("dag_dfs.jl")
 
 """
 Select a removal and an insertion method using powers, and then perform
@@ -276,7 +277,7 @@ end
 
 """build tour from scratch on a cold restart"""
 function initial_tour!(lowest::Tour, dist::Array{Int64, 2}, sets::Vector{Vector{Int64}},
-						setdist::Distsv, trial_num::Int64, param::Dict{Symbol,Any}, num_sets::Int, member::Array{Int64,1}, given_initial_tour::Vector{Int64})
+						setdist::Distsv, trial_num::Int64, param::Dict{Symbol,Any}, num_sets::Int, member::Array{Int64,1}, given_initial_tour::Vector{Int64}, inf_val::Int64, stop_time::Float64)
 	sets_to_insert = collect(1:param[:num_sets])
 	best = Tour(Int64[], typemax(Int64))
 
@@ -284,6 +285,8 @@ function initial_tour!(lowest::Tour, dist::Array{Int64, 2}, sets::Vector{Vector{
     for node_idx in given_initial_tour
       push!(best.tour, node_idx)
     end
+	elseif true
+    best.tour = dag_dfs(dist, sets, member, inf_val, stop_time)
 	elseif param[:init_tour] == "rand" && (trial_num > 1) && (rand() < 0.5)
 		random_initial_tour!(best.tour, sets_to_insert, dist, sets)
 	else
