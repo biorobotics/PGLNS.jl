@@ -290,6 +290,10 @@ function initial_tour!(lowest::Tour, dist::Array{Int64, 2}, sets::Vector{Vector{
     end
 	elseif false
     best.tour = dag_dfs(dist, sets, member, inf_val, stop_time)
+    if length(best.tour) == 0
+      best.cost = inf_val
+      return best
+    end
 	elseif param[:init_tour] == "rand" && (trial_num > 1) && (rand() < 0.5)
 		random_initial_tour!(best.tour, sets_to_insert, dist, sets)
 	else
