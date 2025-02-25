@@ -175,6 +175,7 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
             if trial.cost < best.cost
               updated_best = true
               best = tour_copy(trial)
+              timer = (time_ns() - start_time)/1.0e9
               println("Thread ", thread_idx, " found new best tour after ", timer, " s with cost ", best.cost, " (before opt cycle)")
             end
           finally
