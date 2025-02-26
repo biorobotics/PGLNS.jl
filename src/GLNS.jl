@@ -158,18 +158,28 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
           this_temperature = 0.
           @lock temperature_lock this_temperature = temperature
 
-          lock(current_lock)
-          try
-            if accepttrial_noparam(trial.cost, current.cost, param[:prob_accept]) ||
-               accepttrial(trial.cost, current.cost, this_temperature)
-              @assert(param[:mode] != "slow") # I don't want to perform an opt cycle while something is locked
-              param[:mode] == "slow" && opt_cycle!(current, dist, sets_unshuffled, membership, param, setdist, "full") # This seems incorrect. Why are we optimizing current, then setting current = trial?
-              current = tour_copy(trial)
+          if param[:mode] == "slow"
+            accept = false
+            @lock current_lock accept = accepttrial_noparam(trial.cost, current.cost, param[:prob_accept]) || accepttrial(trial.cost, current.cost, this_temperature)
+
+            if accept
+              opt_cycle!(trial, dist, sets_unshuffled, membership, param, setdist, "full")
+              @lock current_lock current = tour_copy(trial)
             else
-              trial = tour_copy(current)
+              @lock current_lock trial = tour_copy(current) # I don't remember if there was a point to doing this
             end
-          finally
-            unlock(current_lock)
+          else
+            lock(current_lock)
+            try
+              if accepttrial_noparam(trial.cost, current.cost, param[:prob_accept]) ||
+                 accepttrial(trial.cost, current.cost, this_temperature)
+                current = tour_copy(trial)
+              else
+                trial = tour_copy(current) # I don't remember if there was a point to doing this
+              end
+            finally
+              unlock(current_lock)
+            end
           end
 
           updated_best = false
