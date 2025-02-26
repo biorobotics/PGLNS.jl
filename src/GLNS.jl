@@ -300,11 +300,10 @@ function parse_cmd(ARGS)
 		println("-reopt=[Float in [0,1]]          (default is 1.0)")
 		println("-budget=[Int]                    (default has no budget)")
 		println("-socket_port=[Int]               (default is 65432)")
-		println("-lazy_edge_eval=[Int]            (default is 1)")
 		println("-new_socket_each_instance=[filename]    (default is 0)")
 		exit(0)
 	end
-	int_flags = ["-max_time", "-trials", "-restarts", "-verbose", "-budget", "-num_iterations", "-socket_port", "-lazy_edge_eval", "-new_socket_each_instance"]
+	int_flags = ["-max_time", "-trials", "-restarts", "-verbose", "-budget", "-num_iterations", "-socket_port", "-new_socket_each_instance"]
 	float_flags = ["-epsilon", "-reopt"]
 	string_flags = ["-mode", "-output", "-noise", "-devel"]
 	filename = ""

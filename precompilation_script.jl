@@ -52,7 +52,7 @@ function main()
 
     inf_val = maximum(dist)
 
-    @time GLNS.solver(problem_instance, given_initial_tours, time_ns(), inf_val, num_vertices, num_sets, sets, dist, membership, instance_read_time, cost_mat_read_time; optional_args...)
+    @time GLNS.solver(problem_instance, given_initial_tours, time_ns(), inf_val, num_vertices, num_sets, sets, dist, membership, instance_read_time, cost_mat_read_time, 10; optional_args...)
   end
 end
 
