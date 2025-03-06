@@ -118,13 +118,31 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
         phase = :late
       end
       this_phase = phase
+      thread_broke = false
       @threads for thread_idx=1:nthreads
       # for thread_idx=1:1 # Need to use this to match GLNS
         this_num_trials_feasible = 0
         this_num_trials = 0
         while true
-          if @lock count_lock (count[:latest_improvement] > (count[:first_improvement] ?
-                                                             param[:latest_improvement] : param[:first_improvement]))
+          do_break = false
+          lock(count_lock)
+          try
+            if thread_broke || 
+               (count[:latest_improvement] > (count[:first_improvement] ?
+                                              param[:latest_improvement] : param[:first_improvement]))
+              thread_broke = true
+              do_break = true
+            end
+          finally
+            unlock(count_lock)
+          end
+
+          if do_break
+            break
+          end
+
+          if @lock count_lock (thread_broke || count[:latest_improvement] > (count[:first_improvement] ?
+                                                                             param[:latest_improvement] : param[:first_improvement]))
             break
           end
 
@@ -158,8 +176,8 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
           this_temperature = 0.
           @lock temperature_lock this_temperature = temperature
 
+          accept = false
           if param[:mode] == "slow"
-            accept = false
             @lock current_lock accept = accepttrial_noparam(trial.cost, current.cost, param[:prob_accept]) || accepttrial(trial.cost, current.cost, this_temperature)
 
             if accept
@@ -173,6 +191,7 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
             try
               if accepttrial_noparam(trial.cost, current.cost, param[:prob_accept]) ||
                  accepttrial(trial.cost, current.cost, this_temperature)
+                accept = true
                 current = tour_copy(trial)
               else
                 trial = tour_copy(current) # I don't remember if there was a point to doing this
@@ -185,7 +204,7 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
           updated_best = false
           lock(best_lock)
           try
-            if trial.cost < best.cost
+            if accept && trial.cost < best.cost
               updated_best = true
               best = tour_copy(trial)
               timer = (time_ns() - start_time)/1.0e9

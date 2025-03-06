@@ -78,13 +78,17 @@ function remove_insert(current::Tour, dist, member,
 		randpdf_insertion!(trial.tour, sets_to_insert, dist, setdist, sets, sets_unshuffled,
 							insertion.value, noise, set_locks)
 	end
+
   # Bug fix from original GLNS code. In original code, if opt_cycle wasn't called,
   # we wouldn't update trial.cost
-	if rand() < param[:prob_reopt]
+  if rand() < param[:prob_reopt]
     opt_cycle!(trial, dist, sets_unshuffled, member, param, setdist, "partial")
   else
     trial.cost = tour_cost(trial.tour, dist)
   end
+
+  # Original GLNS code
+  # rand() < param[:prob_reopt] && opt_cycle!(trial, dist, sets_unshuffled, member, param, setdist, "partial")
 
 	# update power scores for remove and insert
   # not needed if we're only doing 1 cold trial
