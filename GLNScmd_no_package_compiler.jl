@@ -16,8 +16,8 @@
 
 using Sockets
 import Pkg
-# Pkg.activate(expanduser("~/PGLNS.jl/"))
-# using GLNS
+Pkg.activate(expanduser("~/PGLNS.jl/"))
+using GLNS
 using Printf
 using Dates
 

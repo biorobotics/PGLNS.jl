@@ -31,7 +31,10 @@ include("parameter_defaults.jl")
 function solver(problem_instance::String, given_initial_tours::Vector{Int64}, start_time_for_tour_history::UInt64, inf_val::Int64, num_vertices::Int64, num_sets::Int64, sets::Vector{Vector{Int64}}, dist::Matrix{Int64}, membership::Vector{Int64}, instance_read_time::Float64, cost_mat_read_time::Float64, max_threads::Int64; args...)
   Random.seed!(1234)
 
-  pinthreads(:cores)
+  nthreads = min(Threads.nthreads(), max_threads)
+  if nthreads != 1
+    pinthreads(:cores)
+  end
 
 	param = parameter_settings(num_vertices, num_sets, sets, problem_instance, args)
   if length(given_initial_tours) != 0
@@ -64,7 +67,6 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
 
   set_locks = [ReentrantLock() for set=sets]
 
-  nthreads = min(Threads.nthreads(), max_threads)
   # rngs = [Future.randjump(Random.default_rng(), thread_idx*big(10)^20) for thread_idx=1:nthreads]
 
   powers_lock = ReentrantLock()
