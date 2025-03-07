@@ -236,7 +236,8 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
 
             lock(best_lock)
             try
-              if trial.cost < best.cost
+              # Uncomment || nthreads = 1 to match GLNS
+              if trial.cost < best.cost # || nthreads == 1
                 best = tour_copy(trial)
                 # print_best(count, param, best, lowest, init_time)
                 timer = (time_ns() - start_time)/1.0e9
