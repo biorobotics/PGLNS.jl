@@ -21,7 +21,7 @@ removal followed by insertion on tour.  Operation done in place.
 """
 function remove_insert(current::Tour, dist, member,
 						setdist::Distsv, sets::Vector{Vector{Int64}}, sets_unshuffled::Vector{Vector{Int64}},
-						powers, param::Dict{Symbol,Any}, phase::Symbol, powers_lock::ReentrantLock, current_lock::ReentrantLock, set_locks::Vector{ReentrantLock})
+						powers, param::Dict{Symbol,Any}, phase::Symbol, powers_lock::ReentrantLock, current_lock::ReentrantLock, set_locks::Vector{ReentrantLock}, update_powers::Bool)
 	# make a new tour to perform the insertion and deletion on
   trial = Tour(Vector{Int64}(), 0)
   @lock current_lock trial = tour_copy(current)
@@ -31,10 +31,7 @@ function remove_insert(current::Tour, dist, member,
   removal_idx = 0
   insertion_idx = 0
   noise_idx = 0
-  # If we're only running one cold trial, we don't
-  # update the heuristic weights which means we don't need
-  # to lock
-  if param[:cold_trials] != 1
+  if update_powers
     lock(powers_lock)
     try
       removal_idx = power_select(powers["removals"], powers["removal_total"], phase)
@@ -91,8 +88,7 @@ function remove_insert(current::Tour, dist, member,
   # rand() < param[:prob_reopt] && opt_cycle!(trial, dist, sets_unshuffled, member, param, setdist, "partial")
 
 	# update power scores for remove and insert
-  # not needed if we're only doing 1 cold trial
-  if param[:cold_trials] != 1
+  if update_powers
     score = 0.
     @lock current_lock score = 100 * max(current.cost - trial.cost, 0)/current.cost
     lock(powers_lock)

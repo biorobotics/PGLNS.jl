@@ -58,6 +58,7 @@ function main()
 
   client_socket = accept(server)
 
+  powers = Dict{String, Any}()
   try
     iter_count = 0
     while true
@@ -100,7 +101,7 @@ function main()
       cost_mat_read_time = (read_end_time - read_start_time)/1.0e9
       println("Reading cost mat file took ", cost_mat_read_time, " s")
 
-      GLNS.solver(problem_instance, given_initial_tours, start_time_for_tour_history, inf_val, num_vertices, num_sets, sets, dist, membership, instance_read_time, cost_mat_read_time, 10; optional_args...)
+      _, powers = GLNS.solver(problem_instance, given_initial_tours, start_time_for_tour_history, inf_val, num_vertices, num_sets, sets, dist, membership, instance_read_time, cost_mat_read_time, 10, powers; optional_args...)
       write(client_socket, "solved\n")
       iter_count += 1
     end

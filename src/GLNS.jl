@@ -28,7 +28,7 @@ include("adaptive_powers.jl")
 include("insertion_deletion.jl")
 include("parameter_defaults.jl")
 
-function solver(problem_instance::String, given_initial_tours::Vector{Int64}, start_time_for_tour_history::UInt64, inf_val::Int64, num_vertices::Int64, num_sets::Int64, sets::Vector{Vector{Int64}}, dist::Matrix{Int64}, membership::Vector{Int64}, instance_read_time::Float64, cost_mat_read_time::Float64, max_threads::Int64; args...)
+function solver(problem_instance::String, given_initial_tours::Vector{Int64}, start_time_for_tour_history::UInt64, inf_val::Int64, num_vertices::Int64, num_sets::Int64, sets::Vector{Vector{Int64}}, dist::Matrix{Int64}, membership::Vector{Int64}, instance_read_time::Float64, cost_mat_read_time::Float64, max_threads::Int64, powers::Dict{String,Any}=Dict{String,Any}(), update_powers::Bool=true; args...)
   Random.seed!(1234)
 
   nthreads = min(Threads.nthreads(), max_threads)
@@ -55,7 +55,11 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
 	start_time = time_ns()
 	# compute set distances which will be helpful
 	setdist = set_vertex_dist(dist, num_sets, membership)
-	powers = initialize_powers(param)
+  if length(powers) == 0
+    powers = initialize_powers(param)
+  elseif update_powers
+    power_update!(powers, param)
+  end
   
   sets_unshuffled = deepcopy(sets)
   # sets_unshuffled = sets # Need to use this to match GLNS
@@ -101,11 +105,9 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
 		# print_cold_trial(count, param, best)
 		phase = :early
 
-		if count[:cold_trial] == 1
-			powers = initialize_powers(param)
-		else
-			power_update!(powers, param)
-		end
+    if count[:cold_trial] > 1 && update_powers
+      power_update!(powers, param)
+    end
 
     while count[:warm_trial] <= param[:warm_trials]
       iter_count = 1
@@ -160,7 +162,7 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
           finally
             unlock(phase_lock)
           end
-          trial = remove_insert(current, dist, membership, setdist, sets, sets_unshuffled, powers, param, this_phase, powers_lock, current_lock, set_locks)
+          trial = remove_insert(current, dist, membership, setdist, sets, sets_unshuffled, powers, param, this_phase, powers_lock, current_lock, set_locks, update_powers)
 
           trial_infeasible = dist[trial.tour[end], trial.tour[1]] == inf_val
           @inbounds for i in 1:length(trial.tour)-1
@@ -309,7 +311,7 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
 
   @assert(lowest.cost == tour_cost(lowest.tour, dist))
   @assert(length(lowest.tour) == num_sets)
-  return lowest.cost
+  return lowest.cost, powers
 end
 
 function parse_cmd(ARGS)
