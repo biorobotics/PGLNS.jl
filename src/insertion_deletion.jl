@@ -354,7 +354,7 @@ function random_insertion!(tour::Array{Int64,1}, sets_to_insert::Array{Int64,1},
             best_vertex = rand(sets[set])
             best_position = 1
         else
-            best_vertex, best_position = insert_lb(tour, dist, sets[set], set, setdist, 0.75, ReentrantLock())
+            best_vertex, best_position = insert_lb(tour, dist, sets[set], set, setdist, 0.75, ReentrantLock(), [0.], 0)
         end
         # now, perform the insertion
         insert!(tour, best_position, best_vertex)
