@@ -85,6 +85,8 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
 
   temperature_lock = ReentrantLock()
 
+  lock_times = zeros(nthreads)
+
 	while true
     if count[:cold_trial] > param[:cold_trials] && lowest.cost <= param[:budget]
       break
@@ -99,7 +101,7 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
     end
     best = initial_tour!(lowest, dist, sets, setdist, count[:cold_trial], param, num_sets, membership, initial_tour, inf_val, init_time + param[:max_time])
     if length(best.tour) == 0
-      return inf_val
+      return inf_val, powers
     end
     timer = (time_ns() - start_time)/1.0e9
 		# print_cold_trial(count, param, best)
@@ -129,7 +131,10 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
         this_num_trials = 0
         while true
           do_break = false
+          bt = time()
           lock(count_lock)
+          at = time()
+          lock_times[thread_idx] += at - bt
           try
             if thread_broke || 
                (count[:latest_improvement] > (count[:first_improvement] ?
@@ -145,15 +150,21 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
             break
           end
 
-          if @lock count_lock (thread_broke || count[:latest_improvement] > (count[:first_improvement] ?
-                                                                             param[:latest_improvement] : param[:first_improvement]))
-            break
+          this_iter_count = 0
+          bt = time()
+          lock(iter_count_lock)
+          at = time()
+          lock_times[thread_idx] += at - bt
+          try
+            this_iter_count = iter_count
+          finally
+            unlock(iter_count_lock)
           end
 
-          this_iter_count = 0
-          @lock iter_count_lock this_iter_count = iter_count
-
+          bt = time()
           lock(phase_lock)
+          at = time()
+          lock_times[thread_idx] += at - bt
           try
             if this_iter_count > param[:num_iterations]/2 && phase == :early
               phase = :mid  # move to mid phase after half iterations
@@ -162,7 +173,7 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
           finally
             unlock(phase_lock)
           end
-          trial = remove_insert(current, dist, membership, setdist, sets, sets_unshuffled, powers, param, this_phase, powers_lock, current_lock, set_locks, update_powers)
+          trial = remove_insert(current, dist, membership, setdist, sets, sets_unshuffled, powers, param, this_phase, powers_lock, current_lock, set_locks, update_powers, lock_times, thread_idx)
 
           trial_infeasible = dist[trial.tour[end], trial.tour[1]] == inf_val
           @inbounds for i in 1:length(trial.tour)-1
@@ -178,20 +189,55 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
 
           # decide whether or not to accept trial
           this_temperature = 0.
-          @lock temperature_lock this_temperature = temperature
+          bt = time()
+          lock(temperature_lock)
+          at = time()
+          lock_times[thread_idx] += at - bt
+          try
+            this_temperature = temperature
+          finally
+            unlock(temperature_lock)
+          end
 
           accept = false
           if param[:mode] == "slow"
-            @lock current_lock accept = accepttrial_noparam(trial.cost, current.cost, param[:prob_accept]) || accepttrial(trial.cost, current.cost, this_temperature)
+            bt = time()
+            lock(current_lock)
+            at = time()
+            lock_times[thread_idx] += at - bt
+            try
+              accept = accepttrial_noparam(trial.cost, current.cost, param[:prob_accept]) || accepttrial(trial.cost, current.cost, this_temperature)
+            finally
+              unlock(current_lock)
+            end
 
             if accept
               opt_cycle!(trial, dist, sets_unshuffled, membership, param, setdist, "full")
-              @lock current_lock current = tour_copy(trial)
+              bt = time()
+              lock(current_lock)
+              at = time()
+              lock_times[thread_idx] += at - bt
+              try
+                current = tour_copy(trial)
+              finally
+                unlock(current_lock)
+              end
             else
-              @lock current_lock trial = tour_copy(current) # I don't remember if there was a point to doing this
+              bt = time()
+              lock(current_lock)
+              at = time()
+              lock_times[thread_idx] += at - bt
+              try
+                trial = tour_copy(current) # I don't remember if there was a point to doing this
+              finally
+                unlock(current_lock)
+              end
             end
           else
+            bt = time()
             lock(current_lock)
+            at = time()
+            lock_times[thread_idx] += at - bt
             try
               if accepttrial_noparam(trial.cost, current.cost, param[:prob_accept]) ||
                  accepttrial(trial.cost, current.cost, this_temperature)
@@ -206,7 +252,10 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
           end
 
           updated_best = false
+          bt = time()
           lock(best_lock)
+          at = time()
+          lock_times[thread_idx] += at - bt
           try
             if accept && trial.cost < best.cost
               updated_best = true
@@ -218,7 +267,10 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
             unlock(best_lock)
           end
 
+          bt = time()
           lock(count_lock)
+          at = time()
+          lock_times[thread_idx] += at - bt
           try
             if updated_best
               count[:latest_improvement] = 1
@@ -236,7 +288,10 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
           if updated_best
             opt_cycle!(trial, dist, sets_unshuffled, membership, param, setdist, "full")
 
+            bt = time()
             lock(best_lock)
+            at = time()
+            lock_times[thread_idx] += at - bt
             try
               # Uncomment || nthreads = 1 to match GLNS
               if trial.cost < best.cost # || nthreads == 1
@@ -253,7 +308,10 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
               unlock(best_lock)
             end
 
+            bt = time()
             lock(current_lock)
+            at = time()
+            lock_times[thread_idx] += at - bt
             try
               if trial.cost < current.cost
                 current = tour_copy(trial)
@@ -263,9 +321,20 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
             end
           end
 
-          @lock temperature_lock temperature *= cooling_rate  # cool the temperature
+          bt = time()
+          lock(temperature_lock)
+          at = time()
+          lock_times[thread_idx] += at - bt
+          try
+            temperature *= cooling_rate  # cool the temperature
+          finally
+            unlock(temperature_lock)
+          end
 
+          bt = time()
           lock(iter_count_lock)
+          at = time()
+          lock_times[thread_idx] += at - bt
           try
             iter_count += 1
             count[:total_iter] += 1
@@ -277,7 +346,10 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
             break
           end
         end
+        bt = time()
         lock(num_trials_lock)
+        at = time()
+        lock_times[thread_idx] += at - bt
         try
           num_trials += this_num_trials
           num_trials_feasible += this_num_trials_feasible
@@ -307,10 +379,11 @@ function solver(problem_instance::String, given_initial_tours::Vector{Int64}, st
     push!(tour_history, (round((time_ns() - start_time_for_tour_history)/1.0e9, digits=3), lowest.tour, lowest.cost))
   end
 
-  print_summary(lowest, timer, membership, param, tour_history, cost_mat_read_time, instance_read_time, num_trials_feasible, num_trials, false)
+  print_summary(lowest, timer, membership, param, tour_history, cost_mat_read_time, instance_read_time, num_trials_feasible, num_trials, false, lock_times)
 
   @assert(lowest.cost == tour_cost(lowest.tour, dist))
   @assert(length(lowest.tour) == num_sets)
+  println(lock_times)
   return lowest.cost, powers
 end
 

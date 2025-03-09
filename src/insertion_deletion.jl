@@ -21,10 +21,18 @@ removal followed by insertion on tour.  Operation done in place.
 """
 function remove_insert(current::Tour, dist, member,
 						setdist::Distsv, sets::Vector{Vector{Int64}}, sets_unshuffled::Vector{Vector{Int64}},
-						powers, param::Dict{Symbol,Any}, phase::Symbol, powers_lock::ReentrantLock, current_lock::ReentrantLock, set_locks::Vector{ReentrantLock}, update_powers::Bool)
+						powers, param::Dict{Symbol,Any}, phase::Symbol, powers_lock::ReentrantLock, current_lock::ReentrantLock, set_locks::Vector{ReentrantLock}, update_powers::Bool, lock_times::Vector{Float64}, thread_idx::Int64)
 	# make a new tour to perform the insertion and deletion on
   trial = Tour(Vector{Int64}(), 0)
-  @lock current_lock trial = tour_copy(current)
+  bt = time()
+  lock(current_lock)
+  at = time()
+  lock_times[thread_idx] += at - bt
+  try
+    trial = tour_copy(current)
+  finally
+    unlock(current_lock)
+  end
 	pivot_tour!(trial.tour)
 	num_removals = rand(param[:min_removals]:param[:max_removals])
 
@@ -32,7 +40,10 @@ function remove_insert(current::Tour, dist, member,
   insertion_idx = 0
   noise_idx = 0
   if update_powers
+    bt = time()
     lock(powers_lock)
+    at = time()
+    lock_times[thread_idx] += at - bt
     try
       removal_idx = power_select(powers["removals"], powers["removal_total"], phase)
       insertion_idx = power_select(powers["insertions"], powers["insertion_total"], phase)
@@ -60,7 +71,7 @@ function remove_insert(current::Tour, dist, member,
 		sets_to_insert = segment_removal!(trial.tour, num_removals, member)
 	end
 
-  randomize_sets!(sets, sets_to_insert, set_locks)
+  randomize_sets!(sets, sets_to_insert, set_locks, lock_times, thread_idx)
 
   # Uncomment the following four lines to match GLNS
   # insertion_idx = power_select(powers["insertions"], powers["insertion_total"], phase)
@@ -73,7 +84,7 @@ function remove_insert(current::Tour, dist, member,
 		cheapest_insertion!(trial.tour, sets_to_insert, dist, setdist, sets_unshuffled)
 	else
 		randpdf_insertion!(trial.tour, sets_to_insert, dist, setdist, sets, sets_unshuffled,
-							insertion.value, noise, set_locks)
+							insertion.value, noise, set_locks, lock_times, thread_idx)
 	end
 
   # Bug fix from original GLNS code. In original code, if opt_cycle wasn't called,
@@ -90,8 +101,19 @@ function remove_insert(current::Tour, dist, member,
 	# update power scores for remove and insert
   if update_powers
     score = 0.
-    @lock current_lock score = 100 * max(current.cost - trial.cost, 0)/current.cost
+    bt = time()
+    lock(current_lock)
+    at = time()
+    lock_times[thread_idx] += at - bt
+    try
+      score = 100 * max(current.cost - trial.cost, 0)/current.cost
+    finally
+      unlock(current_lock)
+    end
+    bt = time()
     lock(powers_lock)
+    at = time()
+    lock_times[thread_idx] += at - bt
     try
       insertion.scores[phase] += score
       insertion.count[phase] += 1
@@ -151,7 +173,7 @@ end
 """  choose set with pdf_select, and then insert in best place with noise  """
 function randpdf_insertion!(tour::Array{Int64,1}, sets_to_insert::Array{Int64,1},
 							dist, setdist::Distsv,
-							sets::Vector{Vector{Int64}}, sets_unshuffled::Vector{Vector{Int64}}, power::Float64, noise::Power, set_locks::Vector{ReentrantLock})
+							sets::Vector{Vector{Int64}}, sets_unshuffled::Vector{Vector{Int64}}, power::Float64, noise::Power, set_locks::Vector{ReentrantLock}, lock_times::Vector{Float64}, thread_idx::Int64)
 
     mindist = [typemax(Int64) for i=1:length(sets_to_insert)]
     @inbounds for i = 1:length(sets_to_insert)
@@ -181,7 +203,7 @@ function randpdf_insertion!(tour::Array{Int64,1}, sets_to_insert::Array{Int64,1}
 											  setdist, noise.value)
 		else
 			bestv, bestpos =
-					insert_lb(tour, dist, sets[nearest_set], nearest_set, setdist, noise.value, set_locks[nearest_set])
+					insert_lb(tour, dist, sets[nearest_set], nearest_set, setdist, noise.value, set_locks[nearest_set], lock_times, thread_idx)
 		end
         insert!(tour, bestpos, bestv)  # perform the insertion
         new_vertex_in_tour = bestv
@@ -227,7 +249,7 @@ insertion cost, along with the position of this insertion in the tour.  If
 best_position is i, then vertex should be inserted between tour[i-1] and tour[i].
 """
 @inline function insert_lb(tour::Array{Int64,1}, dist, set::Array{Int64, 1},
-							setind::Int, setdist::Distsv, noise::Float64, set_lock::ReentrantLock)
+							setind::Int, setdist::Distsv, noise::Float64, set_lock::ReentrantLock, lock_times::Vector{Float64}, thread_idx::Int64)
 	best_cost = typemax(Int64)
 	bestv = 0
 	bestpos = 0
@@ -237,7 +259,10 @@ best_position is i, then vertex should be inserted between tour[i-1] and tour[i]
 		lb = setdist.vert_set[v1, setind] + setdist.set_vert[setind, tour[i]] - dist[v1, tour[i]]
 		lb > best_cost && continue
 
+    bt = time()
     lock(set_lock)
+    at = time()
+    lock_times[thread_idx] += at - bt
     try
       for v in set
             insert_cost = dist[v1, v] + dist[v, tour[i]] - dist[v1, tour[i]]
