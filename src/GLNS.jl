@@ -400,7 +400,7 @@ function parse_cmd(ARGS)
 		println("-trials=[Int]                    (default set by mode)")
 		println("-restarts=[Int]                  (default set by mode)")
 		println("-noise=[None, Both, Subset, Add] (default is Both)")
-		println("-num_iterations=[Int]            (default set by mode. Number multiplied by # of sets)")
+		println("-num_iterations=[Float]          (default set by mode. Number multiplied by # of sets)")
 		println("-verbose=[0, 1, 2, 3]            (default is 3. 0 is no output, 3 is most.)")
 		println("-output=[filename]               (default is None)")
 		println("-epsilon=[Float in [0,1]]        (default is 0.5)")
@@ -410,8 +410,8 @@ function parse_cmd(ARGS)
 		println("-new_socket_each_instance=[filename]    (default is 0)")
 		exit(0)
 	end
-	int_flags = ["-max_time", "-trials", "-restarts", "-verbose", "-budget", "-num_iterations", "-socket_port", "-new_socket_each_instance"]
-	float_flags = ["-epsilon", "-reopt"]
+	int_flags = ["-max_time", "-trials", "-restarts", "-verbose", "-budget", "-socket_port", "-new_socket_each_instance"]
+	float_flags = ["-epsilon", "-reopt", "-num_iterations", "-latest_improvement"]
 	string_flags = ["-mode", "-output", "-noise", "-devel"]
 	filename = ""
 	optional_args = Dict{Symbol, Any}()

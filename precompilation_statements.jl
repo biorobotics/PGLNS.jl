@@ -82,6 +82,7 @@ precompile(Tuple{typeof(Core.memoryref), GenericMemory{:not_atomic, GLNS.Power, 
 precompile(Tuple{typeof(Base.indexed_iterate), Tuple{String, Int64}, Int64})
 precompile(Tuple{typeof(Base.indexed_iterate), Tuple{String, Int64}, Int64, Int64})
 precompile(Tuple{typeof(Core.memoryref), GenericMemory{:not_atomic, Tuple{Float64, Array{Int64, 1}, Int64}, Core.AddrSpace{Core}(0x00)}})
+precompile(Tuple{typeof(Base.:(>)), Float64, Float64})
 precompile(Tuple{typeof(Base.ceil), Type{Int64}, Float64})
 precompile(Tuple{Base.BottomRF{typeof(Base.:(+))}, Base._InitialValue, Int64})
 precompile(Tuple{typeof(Main.main)})
@@ -211,3 +212,4 @@ precompile(Tuple{typeof(Base._uv_hook_close), Sockets.TCPServer})
 precompile(Tuple{typeof(Base.uvfinalize), Sockets.TCPServer})
 
 precompile(Tuple{typeof(Core.kwcall), NamedTuple{(:mode, :output, :socket_port, :max_time, :new_socket_each_instance), Tuple{Base.SubString{String}, Base.SubString{String}, Int64, Float64, Int64}}, typeof(GLNS.solver), String, Array{Int64, 1}, UInt64, Int64, Int64, Int64, Array{Array{Int64, 1}, 1}, Array{Int64, 2}, Array{Int64, 1}, Float64, Float64, Int64, Base.Dict{String, Any}})
+precompile(Tuple{typeof(Core.kwcall), NamedTuple{(:mode, :output, :socket_port, :max_time, :new_socket_each_instance, :latest_improvement, :lazy_edge_eval), Tuple{Base.SubString{String}, Base.SubString{String}, Int64, Float64, Int64, Float64, Int64}}, typeof(GLNS.solver), String, Sockets.TCPSocket, Array{Int64, 1}, UInt64, Int64, Array{Tuple{Int64, Int64}, 1}, Bool, Int64, Int64, Array{Array{Int64, 1}, 1}, Array{Int64, 2}, Array{Int64, 1}, Float64, Float64, Bool, String, Base.Dict{String, Any}})

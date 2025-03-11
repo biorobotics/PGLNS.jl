@@ -24,6 +24,8 @@ function parameter_settings(num_vertices, num_sets, sets, problem_instance, args
 	############ default setting #####################
 	if mode == "default"
 		num_iterations = get(args, :num_iterations, 60) * num_sets
+    latest_improvement = get(args, :latest_improvement, num_iterations/2)
+    first_improvement = latest_improvement/2
 		param = Dict(
 		:cold_trials => get(args, :trials, 5),
 		:warm_trials => get(args, :restarts, 3),
@@ -35,16 +37,17 @@ function parameter_settings(num_vertices, num_sets, sets, problem_instance, args
 		:prob_accept => 10.0/num_iterations,
 
 		:num_iterations => num_iterations,
-		:latest_improvement => num_iterations/2,
-		:first_improvement => num_iterations/4,
+		:latest_improvement => latest_improvement,
+		:first_improvement => first_improvement,
 		:max_removals => min(100, max(round(Int64, 0.3*num_sets), 1)),
 		:insertions => ["randpdf", "cheapest"],
 		)
 			
 	################## very_fast  ##########################
 	elseif mode == "fast"
-		
 		num_iterations = get(args, :num_iterations, 60) * num_sets
+    latest_improvement = get(args, :latest_improvement, num_iterations/4)
+    first_improvement = 2*latest_improvement/3
 		param = Dict(
 		:cold_trials => get(args, :trials, 3),
 		:warm_trials => get(args, :restarts, 2),
@@ -56,8 +59,8 @@ function parameter_settings(num_vertices, num_sets, sets, problem_instance, args
 		:prob_accept => 10.0/num_iterations,
 
 		:num_iterations => num_iterations,
-		:latest_improvement => num_iterations/4,
-		:first_improvement => num_iterations/6,
+		:latest_improvement => latest_improvement,
+		:first_improvement => first_improvement,
 		:max_removals => min(20, max(round(Int64, 0.1*num_sets), 1)),
 		:insertions => ["randpdf"],
 		)
@@ -65,6 +68,8 @@ function parameter_settings(num_vertices, num_sets, sets, problem_instance, args
 	################## attempt slow search  ##########################
 	elseif mode == "slow"
 		num_iterations = get(args, :num_iterations, 150) * num_sets
+    latest_improvement = get(args, :latest_improvement, num_iterations/3)
+    first_improvement = latest_improvement/2
 		param = Dict(
 		:cold_trials => get(args, :trials, 10),
 		:warm_trials => get(args, :restarts, 5),
@@ -76,8 +81,8 @@ function parameter_settings(num_vertices, num_sets, sets, problem_instance, args
 		:prob_accept => 10.0/num_iterations,
 
 		:num_iterations => num_iterations,
-		:latest_improvement => num_iterations/3,
-		:first_improvement => num_iterations/6,
+		:latest_improvement => latest_improvement,
+		:first_improvement => first_improvement,
 		:max_removals => max(round(Int64, 0.4*num_sets), 1),
 		:insertions => ["randpdf", "cheapest"],
 		)
@@ -85,6 +90,8 @@ function parameter_settings(num_vertices, num_sets, sets, problem_instance, args
 	else
 		error("mode not recognized.  Use default, fast, or slow")
 	end
+
+  println("Latest improvement = ", param[:latest_improvement], ", first improvement = ", param[:first_improvement])
 	
 	# insertion algs
 	if get(args, :insertion_algs, "default") == "cheapest"
