@@ -310,7 +310,7 @@ end
 ############ Initial Tour Construction ##########################
 
 """build tour from scratch on a cold restart"""
-function initial_tour!(lowest::Tour, dist::Array{Int64, 2}, sets::Vector{Vector{Int64}},
+function initial_tour!(lowest::Tour, dist::AbstractArray{Int64, 2}, sets::Vector{Vector{Int64}},
 						setdist::Distsv, trial_num::Int64, param::Dict{Symbol,Any}, num_sets::Int, member::Array{Int64,1}, given_initial_tour::Vector{Int64}, inf_val::Int64, stop_time::Float64)
 	sets_to_insert = collect(1:param[:num_sets])
 	best = Tour(Int64[], typemax(Int64))
@@ -367,7 +367,7 @@ Randomly shuffle the sets, and then insert the best vertex from each set back in
 the tour where sets are considered in shuffled order.
 """
 function random_initial_tour!(tour::Array{Int64,1}, sets_to_insert::Array{Int64,1},
-							  dist::Array{Int64, 2}, sets::Vector{Vector{Int64}})
+							  dist::AbstractArray{Int64, 2}, sets::Vector{Vector{Int64}})
     shuffle!(sets_to_insert)
     for set in sets_to_insert
 		push!(tour, rand(sets[set]))

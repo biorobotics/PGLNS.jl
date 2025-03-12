@@ -20,6 +20,7 @@ Pkg.activate(expanduser("."))
 using GLNS
 using Printf
 using NPZ
+using PythonCall
 include("src/utilities.jl")
 include("src/parse_print.jl")
 include("src/tour_optimizations.jl")
@@ -33,7 +34,7 @@ function main()
 
   for mode=["slow", "default", "fast"]
     for i=1:2
-      ARGS = ["/home/cobra/GLKH-1.1/GTSPLIB/"*instance_folder*"/custom"*string(i)*".gtsp", "-output=custom.tour", "-socket_port=65432", "-new_socket_each_instance=0", "-verbose=3", "-mode="*mode]
+      ARGS = [expanduser("~/GLKH-1.1/GTSPLIB/"*instance_folder*"/custom"*string(i)*".gtsp"), "-output=custom.tour", "-socket_port=65432", "-new_socket_each_instance=0", "-verbose=3", "-mode="*mode]
 
       problem_instance, optional_args = GLNS.parse_cmd(ARGS)
       problem_instance = String(problem_instance)
@@ -54,6 +55,7 @@ function main()
       inf_val = maximum(dist)
 
       @time GLNS.solver(problem_instance, given_initial_tours, time_ns(), inf_val, num_vertices, num_sets, sets, dist, membership, instance_read_time, cost_mat_read_time, 10; optional_args...)
+      @time GLNS.solver(problem_instance, PyArray{Int64, 1, true, true, Int64}(given_initial_tours), time_ns(), inf_val, num_vertices, num_sets, sets, PyArray{Int64, 2, true, true, Int64}(dist), membership, instance_read_time, cost_mat_read_time, 10; optional_args...)
     end
   end
 end

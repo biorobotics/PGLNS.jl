@@ -28,7 +28,7 @@ include("adaptive_powers.jl")
 include("insertion_deletion.jl")
 include("parameter_defaults.jl")
 
-function solver(problem_instance::String, given_initial_tours::Vector{Int64}, start_time_for_tour_history::UInt64, inf_val::Int64, num_vertices::Int64, num_sets::Int64, sets::Vector{Vector{Int64}}, dist::Matrix{Int64}, membership::Vector{Int64}, instance_read_time::Float64, cost_mat_read_time::Float64, max_threads::Int64, powers::Dict{String,Any}=Dict{String,Any}(), update_powers::Bool=true; args...)
+function solver(problem_instance::String, given_initial_tours::AbstractArray{Int64,1}, start_time_for_tour_history::UInt64, inf_val::Int64, num_vertices::Int64, num_sets::Int64, sets::Vector{Vector{Int64}}, dist::AbstractArray{Int64,2}, membership::Vector{Int64}, instance_read_time::Float64, cost_mat_read_time::Float64, max_threads::Int64, powers::Dict{String,Any}=Dict{String,Any}(), update_powers::Bool=true; args...)
   Random.seed!(1234)
 
   nthreads = min(Threads.nthreads(), max_threads)
@@ -441,7 +441,7 @@ function parse_cmd(ARGS)
 	return filename, optional_args
 end
 
-function main(args::Vector{String}, max_time::Float64, given_initial_tours::Vector{Int64}, npy_dist::Bool, max_threads::Int64)
+function main(args::Vector{String}, max_time::Float64, given_initial_tours::AbstractArray{Int64,1}, npy_dist::Bool, max_threads::Int64)
   start_time_for_tour_history = time_ns()
   problem_instance, optional_args = parse_cmd(args)
   problem_instance = String(problem_instance)

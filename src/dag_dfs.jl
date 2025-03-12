@@ -9,7 +9,7 @@ function DFSNode(parent::Vector{DFSNode}, visited_set_indices::Set{Int64}, final
   return DFSNode(parent, visited_set_indices, final_node_idx, (visited_set_indices, final_node_idx))
 end
 
-function dag_dfs(dist::Array{Int64, 2}, sets::Vector{Vector{Int64}}, membership::Vector{Int64}, inf_val::Int64, stop_time::Float64)
+function dag_dfs(dist::AbstractArray{Int64, 2}, sets::Vector{Vector{Int64}}, membership::Vector{Int64}, inf_val::Int64, stop_time::Float64)
   bt = time_ns()
   closed_list = Set{Tuple{Set{Int64}, Int64}}()
   dfs_stack = [DFSNode(Vector{DFSNode}(), Set(membership[1]), 1)]
