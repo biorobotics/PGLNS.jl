@@ -441,7 +441,7 @@ function parse_cmd(ARGS)
 	return filename, optional_args
 end
 
-function main(args::Vector{String}, max_time::Float64, given_initial_tours::AbstractArray{Int64,1}, npy_dist::Bool, max_threads::Int64)
+function main(args::Vector{String}, max_time::Float64, inf_val::Int64, given_initial_tours::AbstractArray{Int64,1}, dist::AbstractArray{Int64,2}, max_threads::Int64)
   start_time_for_tour_history = time_ns()
   problem_instance, optional_args = parse_cmd(args)
   problem_instance = String(problem_instance)
@@ -451,22 +451,12 @@ function main(args::Vector{String}, max_time::Float64, given_initial_tours::Abst
   end
 
   read_start_time = time_ns()
-  num_vertices, num_sets, sets, dist, membership = read_file(problem_instance, !npy_dist)
+  num_vertices, num_sets, sets, tmp_dist, membership = read_file(problem_instance, size(dist, 1) == 0)
   read_end_time = time_ns()
   instance_read_time = (read_end_time - read_start_time)/1.0e9
   println("Reading GTSPLIB file took ", instance_read_time, " s")
 
   cost_mat_read_time = 0.
-  if npy_dist
-    read_start_time = time_ns()
-    npyfile = first(problem_instance, length(problem_instance) - length(".gtsp")) * ".npy"
-    dist = npzread(npyfile)
-    read_end_time = time_ns()
-    cost_mat_read_time = (read_end_time - read_start_time)/1.0e9
-  end
-
-  inf_val = maximum(dist)
-  # dist[dist .!= inf_val] .= 0
 
   timing_result = @timed GLNS.solver(problem_instance, given_initial_tours, start_time_for_tour_history, inf_val, num_vertices, num_sets, sets, dist, membership, instance_read_time, cost_mat_read_time, max_threads; optional_args...)
   println(timing_result)
