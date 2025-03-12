@@ -91,7 +91,7 @@ function parameter_settings(num_vertices, num_sets, sets, problem_instance, args
 		error("mode not recognized.  Use default, fast, or slow")
 	end
 
-  println("Latest improvement = ", param[:latest_improvement], ", first improvement = ", param[:first_improvement])
+  # println("Latest improvement = ", param[:latest_improvement], ", first improvement = ", param[:first_improvement])
 	
 	# insertion algs
 	if get(args, :insertion_algs, "default") == "cheapest"

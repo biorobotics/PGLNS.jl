@@ -454,13 +454,11 @@ function main(args::Vector{String}, max_time::Float64, inf_val::Int64, given_ini
   num_vertices, num_sets, sets, tmp_dist, membership = read_file(problem_instance, size(dist, 1) == 0)
   read_end_time = time_ns()
   instance_read_time = (read_end_time - read_start_time)/1.0e9
-  println("Reading GTSPLIB file took ", instance_read_time, " s")
+  # println("Reading GTSPLIB file took ", instance_read_time, " s")
 
   cost_mat_read_time = 0.
 
-  timing_result = @timed GLNS.solver(problem_instance, given_initial_tours, start_time_for_tour_history, inf_val, num_vertices, num_sets, sets, dist, membership, instance_read_time, cost_mat_read_time, max_threads; optional_args...)
-  println(timing_result)
-  return timing_result.value
+  return GLNS.solver(problem_instance, given_initial_tours, start_time_for_tour_history, inf_val, num_vertices, num_sets, sets, dist, membership, instance_read_time, cost_mat_read_time, max_threads; optional_args...)
 end
 
 end
