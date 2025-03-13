@@ -379,7 +379,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
     push!(tour_history, (round((time_ns() - start_time_for_tour_history)/1.0e9, digits=3), lowest.tour, lowest.cost))
   end
 
-  print_summary(lowest, timer, membership, param, tour_history, cost_mat_read_time, instance_read_time, num_trials_feasible, num_trials, false, lock_times)
+  print_summary(lowest, timer, membership, param, tour_history, cost_mat_read_time, instance_read_time, num_trials_feasible, num_trials, param[:timeout], lock_times)
 
   @assert(lowest.cost == tour_cost(lowest.tour, dist))
   @assert(length(lowest.tour) == num_sets)
@@ -454,7 +454,9 @@ function main(args::Vector{String}, max_time::Float64, inf_val::Int64, given_ini
   num_vertices, num_sets, sets, tmp_dist, membership = read_file(problem_instance, size(dist, 1) == 0)
   read_end_time = time_ns()
   instance_read_time = (read_end_time - read_start_time)/1.0e9
-  # println("Reading GTSPLIB file took ", instance_read_time, " s")
+  if get(optional_args, :verbose, 0) == 3
+    println("Reading GTSPLIB file took ", instance_read_time, " s")
+  end
 
   cost_mat_read_time = 0.
 
