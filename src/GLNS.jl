@@ -261,7 +261,9 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
               updated_best = true
               best = tour_copy(trial)
               timer = (time_ns() - start_time)/1.0e9
-              println("Thread ", thread_idx, " found new best tour after ", timer, " s with cost ", best.cost, " (before opt cycle)")
+              if param[:print_output] == 3
+                println("Thread ", thread_idx, " found new best tour after ", timer, " s with cost ", best.cost, " (before opt cycle)")
+              end
             end
           finally
             unlock(best_lock)
@@ -298,7 +300,9 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
                 best = tour_copy(trial)
                 # print_best(count, param, best, lowest, init_time)
                 timer = (time_ns() - start_time)/1.0e9
-                println("Thread ", thread_idx, " found new best tour after ", timer, " s with cost ", best.cost)
+                if param[:print_output] == 3
+                  println("Thread ", thread_idx, " found new best tour after ", timer, " s with cost ", best.cost)
+                end
 
                 if param[:output_file] != "None"
                   push!(tour_history, (round((time_ns() - start_time_for_tour_history)/1.0e9, digits=3), best.tour, best.cost))
@@ -383,7 +387,9 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
 
   @assert(lowest.cost == tour_cost(lowest.tour, dist))
   @assert(length(lowest.tour) == num_sets)
-  println(lock_times)
+  if param[:print_output] == 3
+    println(lock_times)
+  end
   return lowest.cost, powers
 end
 
