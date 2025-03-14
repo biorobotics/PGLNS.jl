@@ -61,9 +61,6 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
     power_update!(powers, param)
   end
   
-  sets_unshuffled = deepcopy(sets)
-  # sets_unshuffled = sets # Need to use this to match GLNS
-
   tour_history = Array{Tuple{Float64, Array{Int64,1}, Int64},1}()
   num_trials_feasible = 0
   num_trials = 0
@@ -173,7 +170,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
           finally
             unlock(phase_lock)
           end
-          trial = remove_insert(current, dist, membership, setdist, sets, sets_unshuffled, powers, param, this_phase, powers_lock, current_lock, set_locks, update_powers, lock_times, thread_idx)
+          trial = remove_insert(current, dist, membership, setdist, sets, powers, param, this_phase, powers_lock, current_lock, set_locks, update_powers, lock_times, thread_idx)
 
           trial_infeasible = dist[trial.tour[end], trial.tour[1]] == inf_val
           @inbounds for i in 1:length(trial.tour)-1
@@ -212,7 +209,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
             end
 
             if accept
-              opt_cycle!(trial, dist, sets_unshuffled, membership, param, setdist, "full")
+              opt_cycle!(trial, dist, sets, membership, param, setdist, "full", set_locks, lock_times, thread_idx)
               bt = time()
               lock(current_lock)
               at = time()
@@ -288,7 +285,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
           end
 
           if updated_best
-            opt_cycle!(trial, dist, sets_unshuffled, membership, param, setdist, "full")
+            opt_cycle!(trial, dist, sets, membership, param, setdist, "full", set_locks, lock_times, thread_idx)
 
             bt = time()
             lock(best_lock)
