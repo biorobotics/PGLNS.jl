@@ -28,12 +28,16 @@ include("adaptive_powers.jl")
 include("insertion_deletion.jl")
 include("parameter_defaults.jl")
 
-function solver(problem_instance::String, given_initial_tours::AbstractArray{Int64,1}, start_time_for_tour_history::UInt64, inf_val::Int64, num_vertices::Int64, num_sets::Int64, sets::Vector{Vector{Int64}}, dist::AbstractArray{Int64,2}, membership::Vector{Int64}, instance_read_time::Float64, cost_mat_read_time::Float64, max_threads::Int64, powers::Dict{String,Any}=Dict{String,Any}(), update_powers::Bool=true; args...)
+function solver(problem_instance::String, given_initial_tours::AbstractArray{Int64,1}, start_time_for_tour_history::UInt64, inf_val::Int64, num_vertices::Int64, num_sets::Int64, sets::Vector{Vector{Int64}}, dist::AbstractArray{Int64,2}, membership::Vector{Int64}, instance_read_time::Float64, cost_mat_read_time::Float64, max_threads::Int64, powers::Dict{String,Any}=Dict{String,Any}(), update_powers::Bool=true, pin_cores::Vector{Int64}=Vector{Int64}(); args...)
   Random.seed!(1234)
 
   nthreads = min(Threads.nthreads(), max_threads)
   if nthreads != 1
-    pinthreads(:cores)
+    if length(pin_cores) != 0
+      pinthreads(pin_cores)
+    else
+      pinthreads(:cores)
+    end
   end
 
 	param = parameter_settings(num_vertices, num_sets, sets, problem_instance, args)
@@ -447,7 +451,7 @@ function parse_cmd(ARGS)
 	return filename, optional_args
 end
 
-function main(args::Vector{String}, max_time::Float64, inf_val::Int64, given_initial_tours::AbstractArray{Int64,1}, dist::AbstractArray{Int64,2}, max_threads::Int64)
+function main(args::Vector{String}, max_time::Float64, inf_val::Int64, given_initial_tours::AbstractArray{Int64,1}, dist::AbstractArray{Int64,2}, max_threads::Int64, pin_cores::Vector{Int64}=Vector{Int64}())
   start_time_for_tour_history = time_ns()
   problem_instance, optional_args = parse_cmd(args)
   problem_instance = String(problem_instance)
@@ -469,7 +473,7 @@ function main(args::Vector{String}, max_time::Float64, inf_val::Int64, given_ini
   powers = Dict{String, Any}()
   update_powers = false
 
-  timing_result = @timed GLNS.solver(problem_instance, given_initial_tours, start_time_for_tour_history, inf_val, num_vertices, num_sets, sets, dist, membership, instance_read_time, cost_mat_read_time, max_threads, powers, update_powers; optional_args...)
+  timing_result = @timed GLNS.solver(problem_instance, given_initial_tours, start_time_for_tour_history, inf_val, num_vertices, num_sets, sets, dist, membership, instance_read_time, cost_mat_read_time, max_threads, powers, update_powers, pin_cores; optional_args...)
   if get(optional_args, :verbose, 0) == 3
     println("Compile time: ", timing_result.compile_time)
   end
