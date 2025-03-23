@@ -96,5 +96,5 @@ costs_max_threads = [v[-1, 1] for v in cost_vs_time_arrs[1].values()]
 print('Min, median, max cost (1 thread)')
 print(np.amin(costs_1thread), np.median(costs_1thread), np.amax(costs_1thread))
 
-print('Min, median, max cost (8 threads)')
+print('Min, median, max cost (max threads)')
 print(np.amin(costs_max_threads), np.median(costs_max_threads), np.amax(costs_max_threads))
