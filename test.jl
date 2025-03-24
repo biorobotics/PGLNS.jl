@@ -10,5 +10,7 @@ ARGS = ["/home/cobra/GLKH-1.1/GTSPLIB/debug/custom0.gtsp", "-output=custom.tour"
 npyfile = first(ARGS[1], length(ARGS[1]) - length(".gtsp")) * ".npy"
 dist = npzread(npyfile)
 
-@time GLNS.main(ARGS, 10., 298309430, given_initial_tours, dist)
-@time GLNS.main(ARGS, 10., 298309430, given_initial_tours, dist)
+inf_val = maximum(dist)
+
+@time GLNS.main(ARGS, 10., inf_val, given_initial_tours, dist, 10)
+@time GLNS.main(ARGS, 10., inf_val, given_initial_tours, dist, 10)
