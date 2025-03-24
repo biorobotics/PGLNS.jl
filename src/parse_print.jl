@@ -446,7 +446,8 @@ end
 
 
 """print details at the end of each warm trial"""
-function print_warm_trial(count::Dict{Symbol,Real}, param::Dict{Symbol,Any},
+# function print_warm_trial(count::Dict{Symbol,Real}, param::Dict{Symbol,Any},
+function print_warm_trial(count::Dict{Symbol,Any}, param::Dict{Symbol,Any},
 							best::Tour, iter_count::Int)
 	if param[:print_output] == 2
 		println("-- ", count[:cold_trial], ".", count[:warm_trial],

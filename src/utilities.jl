@@ -46,17 +46,9 @@ function pivot_tour!(tour::Array{Int64,1})
 end
 
 
-function randomize_sets!(sets::Vector{Vector{Int64}}, sets_to_insert::Array{Int64, 1}, set_locks::Vector{ReentrantLock}, lock_times::Vector{Float64}, thread_idx::Int64)
+function randomize_sets!(sets::Vector{Vector{Int64}}, sets_to_insert::Array{Int64, 1})
 	for i in sets_to_insert
-    bt = time()
-    lock(set_locks[i])
-    at = time()
-    lock_times[thread_idx] += at - bt
-    try
-      shuffle!(sets[i])
-    finally
-      unlock(set_locks[i])
-    end
+    shuffle!(sets[i])
 	end
 end
 
