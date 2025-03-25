@@ -45,9 +45,12 @@ function parameter_settings(num_vertices, num_sets, sets, problem_instance, args
 			
 	################## very_fast  ##########################
 	elseif mode == "fast"
-		num_iterations = get(args, :num_iterations, 60) * num_sets
-    latest_improvement = get(args, :latest_improvement, num_iterations/4)
-    first_improvement = 2*latest_improvement/3
+    num_iterations_multiplier = get(args, :num_iterations, 60)
+		num_iterations = num_iterations_multiplier * num_sets
+    latest_improvement_multiplier = get(args, :latest_improvement, num_iterations_multiplier/4)
+    latest_improvement = latest_improvement_multiplier * num_sets
+    first_improvement_multiplier = get(args, :first_improvement, num_iterations_multiplier/6)
+    first_improvement = first_improvement_multiplier * num_sets
 		param = Dict(
 		:cold_trials => get(args, :trials, 3),
 		:warm_trials => get(args, :restarts, 2),
