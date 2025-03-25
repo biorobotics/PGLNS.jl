@@ -32,10 +32,12 @@ large_folder = expanduser("~/gtsp_instances/large_lib/large_lib/")
 sat_folder = expanduser("~/gtsp_instances/sat_lib/sat_lib/")
 
 # instance_folders = [BAF_folder, MOM_folder, gtsplib_a_folder, gtsplib_s_folder, gtsplib_plus_folder, large_folder, sat_folder]
+# instance_folders = [sat_folder]
+# instance_folders = [gtsplib_s_folder]
+instance_folders = [MOM_folder]
 # instance_folders = [large_folder]
-# instance_folders = [MOM_folder]
-# instance_folders = [large_folder]
-instance_folders = [BAF_folder]
+# instance_folders = [BAF_folder]
+print(instance_folders)
 soln_names = []
 for folder in instance_folders:
   for filename in sorted(os.listdir(folder)):
@@ -43,8 +45,8 @@ for folder in instance_folders:
       continue
     soln_names.append(filename + '.tour')
 
-folders = ["solutions_1threads/", "solutions_10threads/"]
-# folders = ["02_24_2025_speedup_experiments/solutions_1threads/", "02_24_2025_speedup_experiments/solutions_10threads/"]
+# folders = ["solutions_1threads/", "solutions_10threads/"]
+folders = ["02_24_2025_speedup_experiments/solutions_1threads/", "02_24_2025_speedup_experiments/solutions_10threads/"]
 cost_vs_time_arrs = []
 for folder in folders:
   cost_vs_time_arrs.append(dict())
@@ -67,6 +69,7 @@ for k in cost_vs_time_arrs[0]:
 
   final_cost_1thread = cost_vs_time_1thread[-1, 1]
   final_time_1thread = cost_vs_time_1thread[-1, 0]
+  reach_time_1thread = cost_vs_time_1thread[np.where(cost_vs_time_1thread[:, 1] == final_cost_1thread)[0][0], 0]
 
   final_cost_max_threads = cost_vs_time_max_threads[-1, 1]
   final_time_max_threads = cost_vs_time_max_threads[-1, 0]
@@ -74,7 +77,8 @@ for k in cost_vs_time_arrs[0]:
   reach_idx_max_threads = np.where(cost_vs_time_max_threads[:, 1] <= final_cost_1thread)[0]
   if len(reach_idx_max_threads):
     reach_time_max_threads = cost_vs_time_max_threads[reach_idx_max_threads[0], 0]
-    speedups.append(final_time_1thread/reach_time_max_threads)
+    speedups.append(reach_time_1thread/reach_time_max_threads)
+    # speedups.append(final_time_1thread/reach_time_max_threads)
     num_instances_with_speedup += speedups[-1] > 1
   else:
     print(final_cost_max_threads, final_cost_1thread)
