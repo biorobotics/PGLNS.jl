@@ -33,7 +33,7 @@ function main()
   instance_folder = "debug"
 
   for i=1:2
-    ARGS = [expanduser("~/GLKH-1.1/GTSPLIB/"*instance_folder*"/custom"*string(i)*".gtsp"), "-output=custom.tour", "-socket_port=65432", "-new_socket_each_instance=0", "-verbose=3", "-mode=fast", "-num_iterations=60", "-latest_improvement=15", "-first_improvement=10"]
+    ARGS = [expanduser("~/GLKH-1.1/GTSPLIB/"*instance_folder*"/custom"*string(i)*".gtsp"), "-output=custom.tour", "-socket_port=65432", "-new_socket_each_instance=0", "-verbose=3", "-mode=fast", "-num_iterations=60", "-latest_improvement=15", "-first_improvement=10", "-max_removal_fraction=0.4"]
 
     problem_instance = string(ARGS[1])
 
