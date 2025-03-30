@@ -420,7 +420,7 @@ function parse_cmd(ARGS)
 		println("-new_socket_each_instance=[filename]    (default is 0)")
 		exit(0)
 	end
-	int_flags = ["-max_time", "-trials", "-restarts", "-verbose", "-budget", "-socket_port", "-new_socket_each_instance"]
+	int_flags = ["-max_time", "-trials", "-restarts", "-verbose", "-budget", "-socket_port", "-new_socket_each_instance", "-max_removals_cap"]
 	float_flags = ["-epsilon", "-reopt", "-num_iterations", "-latest_improvement", "-first_improvement", "-max_removal_fraction"]
 	string_flags = ["-mode", "-output", "-noise", "-devel"]
 	filename = ""
