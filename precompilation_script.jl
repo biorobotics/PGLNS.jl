@@ -49,7 +49,7 @@ function main()
 
     pin_cores = Vector{Int64}()
     @time GLNS.main(ARGS, 10., inf_val, given_initial_tours, dist, 10, pin_cores)
-    @time GLNS.main(ARGS, 10., inf_val, PyArray{Int64, 1, true, true, Int64}(given_initial_tours), PyArray{Int64, 2, true, true, Int64}(dist), 10, pin_cores)
+    @time GLNS.main(PyList{Any}(ARGS), 10., inf_val, PyArray{Int64, 1, true, true, Int64}(given_initial_tours), PyArray{Int64, 2, true, true, Int64}(dist), 10, pin_cores)
   end
 end
 
