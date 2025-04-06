@@ -101,7 +101,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
       end_idx = count[:cold_trial]*num_sets
       initial_tour = given_initial_tours[start_idx:end_idx]
     else
-      initial_tour = given_initial_tours
+      initial_tour = Vector{Int64}()
     end
     best = initial_tour!(lowest, dist, sets, setdist, count[:cold_trial], param, num_sets, membership, initial_tour, inf_val, init_time + param[:max_time])
     if length(best.tour) == 0
