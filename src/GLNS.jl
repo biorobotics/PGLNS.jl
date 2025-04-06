@@ -91,8 +91,10 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
 
   lock_times = zeros(nthreads)
 
+  stop_upon_budget = param[:budget] != typemin(Int64)
+
 	while true
-    if count[:cold_trial] > param[:cold_trials] && lowest.cost <= param[:budget]
+    if count[:cold_trial] > param[:cold_trials] && (!stop_upon_budget || param[:budget_met])
       break
     end
 
@@ -133,6 +135,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
       # for thread_idx=1:1 # Need to use this to match GLNS
         this_num_trials_feasible = 0
         this_num_trials = 0
+        budget_met = false
         while true
           do_break = false
           bt = time()
@@ -140,7 +143,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
           at = time()
           lock_times[thread_idx] += at - bt
           try
-            if thread_broke || 
+            if budget_met || thread_broke || 
                (count[:latest_improvement] > (count[:first_improvement] ?
                                               param[:latest_improvement] : param[:first_improvement]))
               thread_broke = true
@@ -269,8 +272,14 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
                 println("Thread ", thread_idx, " found new best tour after ", timer, " s with cost ", best.cost, " (before opt cycle)")
               end
             end
+
+            budget_met = stop_upon_budget && best.cost <= param[:budget]
           finally
             unlock(best_lock)
+          end
+
+          if budget_met
+            continue
           end
 
           bt = time()
@@ -312,8 +321,13 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
                   push!(tour_history, (round((time_ns() - start_time_for_tour_history)/1.0e9, digits=3), best.tour, best.cost))
                 end
               end
+              budget_met = stop_upon_budget && best.cost <= param[:budget]
             finally
               unlock(best_lock)
+            end
+
+            if budget_met
+              continue
             end
 
             bt = time()
@@ -369,6 +383,10 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
       count[:warm_trial] += 1
       count[:latest_improvement] = 1
       count[:first_improvement] = false
+      param[:budget_met] = stop_upon_budget && best.cost <= param[:budget]
+      if param[:budget_met]
+        break
+      end
 
       if time() - init_time > param[:max_time]
         param[:timeout] = true

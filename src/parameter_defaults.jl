@@ -132,7 +132,7 @@ function parameter_settings(num_vertices, num_sets, sets, problem_instance, args
 	param[:noise] = get(args, :noise, "Add")
 	param[:adaptive_iter] = 1
 	param[:print_time] = 5
-	param[:budget] = get(args, :budget, typemax(Int64))
+	param[:budget] = get(args, :budget, typemin(Int64))
 	param[:socket_port] = get(args, :socket_port, 65432)
 	param[:lazy_edge_eval] = get(args, :lazy_edge_eval, 1)
 	param[:new_socket_each_instance] = get(args, :new_socket_each_instance, 0)
