@@ -94,7 +94,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
   stop_upon_budget = param[:budget] != typemin(Int64)
 
 	while true
-    if count[:cold_trial] > param[:cold_trials] && (!stop_upon_budget || param[:budget_met])
+    if count[:cold_trial] > param[:cold_trials] && !stop_upon_budget
       break
     end
 
@@ -273,7 +273,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
               end
             end
 
-            budget_met = stop_upon_budget && best.cost <= param[:budget]
+            budget_met = best.cost <= param[:budget]
           finally
             unlock(best_lock)
           end
@@ -321,7 +321,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
                   push!(tour_history, (round((time_ns() - start_time_for_tour_history)/1.0e9, digits=3), best.tour, best.cost))
                 end
               end
-              budget_met = stop_upon_budget && best.cost <= param[:budget]
+              budget_met = best.cost <= param[:budget]
             finally
               unlock(best_lock)
             end
@@ -383,11 +383,10 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
       count[:warm_trial] += 1
       count[:latest_improvement] = 1
       count[:first_improvement] = false
-      param[:budget_met] = stop_upon_budget && best.cost <= param[:budget]
+      param[:budget_met] = best.cost <= param[:budget]
       if param[:budget_met]
         break
       end
-
       if time() - init_time > param[:max_time]
         param[:timeout] = true
         break
@@ -396,6 +395,9 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
 		lowest.cost > best.cost && (lowest = best)
 		count[:warm_trial] = 0
 		count[:cold_trial] += 1
+    if param[:budget_met]
+      break
+    end
     if time() - init_time > param[:max_time]
       break
     end
@@ -440,7 +442,7 @@ function parse_cmd(ARGS)
 	end
 	int_flags = ["-max_time", "-trials", "-restarts", "-verbose", "-budget", "-socket_port", "-new_socket_each_instance", "-max_removals_cap"]
 	float_flags = ["-epsilon", "-reopt", "-num_iterations", "-latest_improvement", "-first_improvement", "-max_removal_fraction"]
-	string_flags = ["-mode", "-output", "-noise", "-devel"]
+	string_flags = ["-mode", "-output", "-noise", "-devel", "-init_tour"]
 	filename = ""
 	optional_args = Dict{Symbol, Any}()
 	for arg in ARGS
