@@ -128,6 +128,110 @@ function remove_insert(current::Tour, dist, member,
 	return trial
 end
 
+function remove_insert_dp(current::Tour, dist::AbstractArray{Int64,2}, member::Array{Int64,1},
+						setdist::Distsv, sets::Vector{Vector{Int64}},
+						powers, param::Dict{Symbol,Any}, phase::Symbol, inf_val::Int64, stop_time::Float64, vd_info::VDInfo, powers_lock::ReentrantLock, current_lock::ReentrantLock, set_locks::Vector{ReentrantLock}, update_powers::Bool, lock_times::Vector{Float64}, thread_idx::Int64)
+  # I don't want to have to lock current to check this. Anyway the check always succeeds in non-parallel GLNS
+  #=
+  if current.cost >= inf_val
+    throw("Trying to repair infeasible tour using A*")
+  end
+  =#
+
+	# make a new tour to perform the insertion and deletion on
+  trial = Tour(Vector{Int64}(), 0)
+  bt = time()
+  lock(current_lock)
+  at = time()
+  lock_times[thread_idx] += at - bt
+  try
+    trial = tour_copy(current)
+  finally
+    unlock(current_lock)
+  end
+
+  # I'm doing this to avoid headaches of figuring out where node 1 used to be after removing it
+  idx1 = findfirst(==(1), trial.tour)
+  trial.tour = [trial.tour[idx1:end]; trial.tour[1:idx1-1]]
+
+	num_removals = rand(param[:min_removals]:param[:max_removals])
+
+  removal_idx = 0
+  if update_powers
+    bt = time()
+    lock(powers_lock)
+    at = time()
+    lock_times[thread_idx] += at - bt
+    try
+      removal_idx = power_select(powers["removals"], powers["removal_total"], phase)
+    finally
+      unlock(powers_lock)
+    end
+  else
+    removal_idx = power_select(powers["removals"], powers["removal_total"], phase)
+  end
+  removal = powers["removals"][removal_idx]
+	if removal.name == "distance"
+		sets_to_insert = distance_removal!(trial.tour, dist, num_removals,
+													member, removal.value)
+  elseif removal.name == "worst"
+		sets_to_insert = worst_removal!(trial.tour, dist, num_removals,
+													member, removal.value)
+	else
+		sets_to_insert = segment_removal!(trial.tour, num_removals, member)
+	end
+
+  if trial.tour[1] != 1
+    trial.tour = [1; trial.tour]
+    idx1 = findfirst(==(1), sets_to_insert)
+    splice!(sets_to_insert, idx1)
+    # sort!(sets_to_insert)
+  end
+
+	trial.tour = dp_insertion!(sets_to_insert, dist, sets, member, inf_val, stop_time, vd_info, trial.tour)
+  if length(trial.tour) == 0
+    bt = time()
+    lock(current_lock)
+    at = time()
+    lock_times[thread_idx] += at - bt
+    try
+      trial = tour_copy(current)
+    finally
+      unlock(current_lock)
+    end
+    return trial, true
+  else
+    trial.cost = tour_cost(trial.tour, dist)
+    if trial.cost >= inf_val
+      throw("A* insertion gave infinite cost tour")
+    end
+  end
+
+	# update power scores for remove and insert
+  if update_powers
+    score = 0.
+    bt = time()
+    lock(current_lock)
+    at = time()
+    lock_times[thread_idx] += at - bt
+    try
+      score = 100 * max(current.cost - trial.cost, 0)/current.cost
+    finally
+      unlock(current_lock)
+    end
+    bt = time()
+    lock(powers_lock)
+    at = time()
+    lock_times[thread_idx] += at - bt
+    try
+      removal.scores[phase] += score
+      removal.count[phase] += 1
+    finally
+      unlock(powers_lock)
+    end
+  end
+  return trial, false
+end
 
 """
 Select an integer between 1 and num according to

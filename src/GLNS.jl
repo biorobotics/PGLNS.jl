@@ -21,6 +21,7 @@ using Polyester: @batch
 using Base.Threads
 using ThreadPinning
 import Future
+include("compact_dp_insertion.jl")
 include("utilities.jl")
 include("parse_print.jl")
 include("tour_optimizations.jl")
@@ -93,7 +94,18 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
 
   stop_upon_budget = param[:budget] != typemin(Int64)
 
-	while true
+  do_dp_insertion = true
+  if do_dp_insertion
+    # vd_info = VDInfo(dist, sets, membership, inf_val, param[:max_removals])
+    # vd_info = VDInfo(dist, sets, membership, inf_val, num_sets)
+    vd_info = VDInfo(dist, sets, membership, inf_val)
+  else
+    vd_info = VDInfo(zeros(Int64, 1, 1), Vector{Vector{Int64}}(), zeros(Int64, 1), inf_val)
+  end
+
+  triangle_violation = false
+
+	while !triangle_violation
     if count[:cold_trial] > param[:cold_trials] && !stop_upon_budget
       break
     end
@@ -117,7 +129,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
       power_update!(powers, param)
     end
 
-    while count[:warm_trial] <= param[:warm_trials]
+    while count[:warm_trial] <= param[:warm_trials] && !triangle_violation
       iter_count = 1
       current = tour_copy(best)
       temperature = 1.442 * param[:accept_percentage] * best.cost
@@ -180,7 +192,27 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
           finally
             unlock(phase_lock)
           end
-          trial = remove_insert(current, dist, membership, setdist, sets, sets_unshuffled, powers, param, this_phase, powers_lock, current_lock, set_locks, update_powers, lock_times, thread_idx)
+
+          if do_dp_insertion
+            trial, this_triangle_violation = remove_insert_dp(current, dist, membership, setdist, sets_unshuffled, powers, param, this_phase, inf_val, init_time + param[:max_time], vd_info, powers_lock, current_lock, set_locks, update_powers, lock_times, thread_idx)
+
+            if this_triangle_violation
+              bt = time()
+              lock(count_lock)
+              at = time()
+              lock_times[thread_idx] += at - bt
+              try
+                triangle_violation = this_triangle_violation
+                thread_broke = true
+              finally
+                unlock(count_lock)
+              end
+
+              break
+            end
+          else
+            trial = remove_insert(current, dist, membership, setdist, sets, sets_unshuffled, powers, param, this_phase, powers_lock, current_lock, set_locks, update_powers, lock_times, thread_idx)
+          end
 
           trial_infeasible = dist[trial.tour[end], trial.tour[1]] == inf_val
           @inbounds for i in 1:length(trial.tour)-1
@@ -269,7 +301,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
               best = tour_copy(trial)
               timer = (time_ns() - start_time)/1.0e9
               if param[:print_output] == 3
-                println("Thread ", thread_idx, " found new best tour after ", timer, " s with cost ", best.cost, " (before opt cycle)")
+                # println("Thread ", thread_idx, " found new best tour after ", timer, " s with cost ", best.cost, " (before opt cycle)")
               end
             end
 
@@ -314,7 +346,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
                 # print_best(count, param, best, lowest, init_time)
                 timer = (time_ns() - start_time)/1.0e9
                 if param[:print_output] == 3
-                  println("Thread ", thread_idx, " found new best tour after ", timer, " s with cost ", best.cost)
+                  # println("Thread ", thread_idx, " found new best tour after ", timer, " s with cost ", best.cost)
                 end
 
                 if param[:output_file] != "None"
@@ -384,7 +416,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
       count[:latest_improvement] = 1
       count[:first_improvement] = false
       param[:budget_met] = best.cost <= param[:budget]
-      if param[:budget_met]
+      if param[:budget_met] || triangle_violation
         break
       end
       if time() - init_time > param[:max_time]
@@ -395,7 +427,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
 		lowest.cost > best.cost && (lowest = best)
 		count[:warm_trial] = 0
 		count[:cold_trial] += 1
-    if param[:budget_met]
+    if param[:budget_met] || triangle_violation
       break
     end
     if time() - init_time > param[:max_time]
