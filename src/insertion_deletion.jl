@@ -131,13 +131,6 @@ end
 function remove_insert_dp(current::Tour, dist::AbstractArray{Int64,2}, member::Array{Int64,1},
 						setdist::Distsv, sets::Vector{Vector{Int64}},
 						powers, param::Dict{Symbol,Any}, phase::Symbol, inf_val::Int64, stop_time::Float64, vd_info::VDInfo, powers_lock::ReentrantLock, current_lock::ReentrantLock, set_locks::Vector{ReentrantLock}, update_powers::Bool, lock_times::Vector{Float64}, thread_idx::Int64)
-  # I don't want to have to lock current to check this. Anyway the check always succeeds in non-parallel GLNS
-  #=
-  if current.cost >= inf_val
-    throw("Trying to repair infeasible tour using A*")
-  end
-  =#
-
 	# make a new tour to perform the insertion and deletion on
   trial = Tour(Vector{Int64}(), 0)
   bt = time()
@@ -148,6 +141,10 @@ function remove_insert_dp(current::Tour, dist::AbstractArray{Int64,2}, member::A
     trial = tour_copy(current)
   finally
     unlock(current_lock)
+  end
+
+  if trial.cost >= inf_val
+    throw("Trying to repair infeasible tour using DP")
   end
 
   # I'm doing this to avoid headaches of figuring out where node 1 used to be after removing it
@@ -203,7 +200,7 @@ function remove_insert_dp(current::Tour, dist::AbstractArray{Int64,2}, member::A
   else
     trial.cost = tour_cost(trial.tour, dist)
     if trial.cost >= inf_val
-      throw("A* insertion gave infinite cost tour")
+      throw("DP insertion gave infinite cost tour")
     end
   end
 

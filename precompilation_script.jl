@@ -42,10 +42,6 @@ function main()
     inf_val = maximum(dist)
 
     pin_cores = Vector{Int64}()
-    if i == 1
-      # Handle the case where no initial tour is passed
-      @time GLNS.main(ARGS, 10., inf_val, Vector{Int64}(), dist, 10, pin_cores)
-    end
     @time GLNS.main(ARGS, 10., inf_val, given_initial_tours, dist, 10, pin_cores)
     @time GLNS.main(PyList{Any}(ARGS), 10., inf_val, PyArray{Int64, 1, true, true, Int64}(given_initial_tours), PyArray{Int64, 2, true, true, Int64}(dist), 10, pin_cores)
   end
