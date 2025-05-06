@@ -16,7 +16,7 @@
 
 using Sockets
 import Pkg
-Pkg.activate(expanduser("~/PGLNS.jl"))
+Pkg.activate(expanduser("~/PGLNS_dp_repair.jl"))
 using GLNS
 using Printf
 using NPZ

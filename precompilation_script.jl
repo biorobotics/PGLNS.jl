@@ -16,17 +16,11 @@
 
 using Sockets
 import Pkg
-Pkg.activate(expanduser("~/PGLNS.jl"))
+Pkg.activate(expanduser("~/PGLNS_dp_repair.jl"))
 import GLNS
 using Printf
 using NPZ
 using PythonCall
-include("src/utilities.jl")
-include("src/parse_print.jl")
-include("src/tour_optimizations.jl")
-include("src/adaptive_powers.jl")
-include("src/insertion_deletion.jl")
-include("src/parse_print.jl")
 
 function main()
   # Should be in the /home/cobra/GLKH-1.1/GTSPLIB folder
