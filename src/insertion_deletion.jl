@@ -21,7 +21,7 @@ removal followed by insertion on tour.  Operation done in place.
 """
 function remove_insert(current::Tour, dist, member,
 						setdist::Distsv, sets::Vector{Vector{Int64}}, sets_unshuffled::Vector{Vector{Int64}},
-						powers, param::Dict{Symbol,Any}, phase::Symbol, powers_lock::ReentrantLock, current_lock::ReentrantLock, set_locks::Vector{ReentrantLock}, update_powers::Bool, lock_times::Vector{Float64}, thread_idx::Int64)
+						powers, param::Dict{Symbol,Any}, phase::Symbol, powers_lock::ReentrantLock, current_lock::ReentrantLock, set_locks::Vector{ReentrantLock}, update_powers::Bool, lock_times::Vector{Float64}, thread_idx::Int64, inf_val::Int64, stop_time::Float64, vd_info::VDInfo)
 	# make a new tour to perform the insertion and deletion on
   trial = Tour(Vector{Int64}(), 0)
   bt = time()
@@ -36,6 +36,9 @@ function remove_insert(current::Tour, dist, member,
 	pivot_tour!(trial.tour)
 	num_removals = rand(param[:min_removals]:param[:max_removals])
 
+  allow_dp = trial.cost < inf_val
+  prev_dp_weight = 0.
+
   removal_idx = 0
   insertion_idx = 0
   noise_idx = 0
@@ -46,6 +49,14 @@ function remove_insert(current::Tour, dist, member,
     lock_times[thread_idx] += at - bt
     try
       removal_idx = power_select(powers["removals"], powers["removal_total"], phase)
+      if !allow_dp
+        for insertion_idx in 1:length(powers["insertion"])
+          if powers["insertions"][insertion_idx].name == "dp"
+            prev_dp_weight = powers["insertions"][insertion_idx].weight[phase]
+            powers["insertions"][insertion_idx].weight[phase] = 0.
+          end
+        end
+      end
       insertion_idx = power_select(powers["insertions"], powers["insertion_total"], phase)
       noise_idx = power_select(powers["noise"], powers["noise_total"], phase)
     finally
@@ -53,6 +64,14 @@ function remove_insert(current::Tour, dist, member,
     end
   else
     removal_idx = power_select(powers["removals"], powers["removal_total"], phase)
+    if !allow_dp
+      for insertion_idx in 1:length(powers["insertions"])
+        if powers["insertions"][insertion_idx].name == "dp"
+          prev_dp_weight = powers["insertions"][insertion_idx].weight[phase]
+          powers["insertions"][insertion_idx].weight[phase] = 0.
+        end
+      end
+    end
     # Comment out the following two lines to match GLNS
     insertion_idx = power_select(powers["insertions"], powers["insertion_total"], phase)
     noise_idx = power_select(powers["noise"], powers["noise_total"], phase)
@@ -61,6 +80,13 @@ function remove_insert(current::Tour, dist, member,
   # Comment out the following two lines to match GLNS
   insertion = powers["insertions"][insertion_idx]
   noise = powers["noise"][noise_idx]
+
+  if insertion.name == "dp"
+    # I'm doing this to avoid headaches of figuring out where node 1 used to be after removing it
+    idx1 = findfirst(==(1), trial.tour)
+    trial.tour = [trial.tour[idx1:end]; trial.tour[1:idx1-1]]
+  end
+
 	if removal.name == "distance"
 		sets_to_insert = distance_removal!(trial.tour, dist, num_removals,
 													member, removal.value)
@@ -71,7 +97,14 @@ function remove_insert(current::Tour, dist, member,
 		sets_to_insert = segment_removal!(trial.tour, num_removals, member)
 	end
 
-  randomize_sets!(sets, sets_to_insert, set_locks, lock_times, thread_idx)
+  # randomize_sets!(sets, sets_to_insert, set_locks, lock_times, thread_idx)
+
+  if insertion.name == "dp" && trial.tour[1] != 1
+    trial.tour = [1; trial.tour]
+    idx1 = findfirst(==(1), sets_to_insert)
+    splice!(sets_to_insert, idx1)
+    # sort!(sets_to_insert)
+  end
 
   # Uncomment the following four lines to match GLNS
   # insertion_idx = power_select(powers["insertions"], powers["insertion_total"], phase)
@@ -82,6 +115,23 @@ function remove_insert(current::Tour, dist, member,
 	# then perform insertion
 	if insertion.name == "cheapest"
 		cheapest_insertion!(trial.tour, sets_to_insert, dist, setdist, sets_unshuffled)
+	elseif insertion.name == "dp"
+    if !allow_dp
+      throw("Trying to repair infeasible tour using DP")
+    end
+    trial.tour = dp_insertion!(sets_to_insert, dist, sets, member, inf_val, stop_time, vd_info, trial.tour)
+
+    if length(trial.tour) == 0
+      bt = time()
+      lock(current_lock)
+      at = time()
+      lock_times[thread_idx] += at - bt
+      try
+        trial = tour_copy(current)
+      finally
+        unlock(current_lock)
+      end
+    end
 	else
 		randpdf_insertion!(trial.tour, sets_to_insert, dist, setdist, sets, sets_unshuffled,
 							insertion.value, noise, set_locks, lock_times, thread_idx)
@@ -91,7 +141,7 @@ function remove_insert(current::Tour, dist, member,
   # we wouldn't update trial.cost
   if rand() < param[:prob_reopt]
     opt_cycle!(trial, dist, sets_unshuffled, member, param, setdist, "partial")
-  else
+  elseif insertion.name != "dp"
     trial.cost = tour_cost(trial.tour, dist)
   end
 
@@ -121,8 +171,24 @@ function remove_insert(current::Tour, dist, member,
       removal.count[phase] += 1
       noise.scores[phase] += score
       noise.count[phase] += 1
+
+      if !allow_dp
+        for insertion_idx in 1:length(powers["insertions"])
+          if powers["insertions"][insertion_idx].name == "dp"
+            powers["insertions"][insertion_idx].weight[phase] = prev_dp_weight
+          end
+        end
+      end
     finally
       unlock(powers_lock)
+    end
+  else
+    if !allow_dp
+      for insertion_idx in 1:length(powers["insertions"])
+        if powers["insertions"][insertion_idx].name == "dp"
+          powers["insertions"][insertion_idx].weight[phase] = prev_dp_weight
+        end
+      end
     end
   end
 	return trial

@@ -40,7 +40,7 @@ function parameter_settings(num_vertices, num_sets, sets, problem_instance, args
 		:latest_improvement => latest_improvement,
 		:first_improvement => first_improvement,
 		:max_removals => min(100, max(round(Int64, 0.3*num_sets), 1)),
-		:insertions => ["randpdf", "cheapest"],
+		:insertions => ["randpdf", "cheapest", "dp"],
 		)
 			
 	################## very_fast  ##########################
@@ -67,7 +67,7 @@ function parameter_settings(num_vertices, num_sets, sets, problem_instance, args
 		:latest_improvement => latest_improvement,
 		:first_improvement => first_improvement,
 		:max_removals => min(max_removals_cap, max(round(Int64, max_removal_fraction*num_sets), 1)),
-		:insertions => ["randpdf"],
+		:insertions => ["randpdf", "dp"],
 		)
 	
 	################## attempt slow search  ##########################
@@ -89,7 +89,7 @@ function parameter_settings(num_vertices, num_sets, sets, problem_instance, args
 		:latest_improvement => latest_improvement,
 		:first_improvement => first_improvement,
 		:max_removals => max(round(Int64, 0.4*num_sets), 1),
-		:insertions => ["randpdf", "cheapest"],
+		:insertions => ["randpdf", "cheapest", "dp"],
 		)
 		
 	else

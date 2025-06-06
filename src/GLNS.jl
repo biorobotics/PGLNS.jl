@@ -193,6 +193,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
             unlock(phase_lock)
           end
 
+          #=
           if do_dp_insertion
             trial, this_triangle_violation = remove_insert_dp(current, dist, membership, setdist, sets_unshuffled, powers, param, this_phase, inf_val, init_time + param[:max_time], vd_info, powers_lock, current_lock, set_locks, update_powers, lock_times, thread_idx)
 
@@ -213,6 +214,8 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
           else
             trial = remove_insert(current, dist, membership, setdist, sets, sets_unshuffled, powers, param, this_phase, powers_lock, current_lock, set_locks, update_powers, lock_times, thread_idx)
           end
+          =#
+          trial = remove_insert(current, dist, membership, setdist, sets, sets_unshuffled, powers, param, this_phase, powers_lock, current_lock, set_locks, update_powers, lock_times, thread_idx, inf_val, init_time + param[:max_time], vd_info)
 
           trial_infeasible = dist[trial.tour[end], trial.tour[1]] == inf_val
           @inbounds for i in 1:length(trial.tour)-1

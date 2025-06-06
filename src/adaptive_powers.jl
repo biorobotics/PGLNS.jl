@@ -64,7 +64,7 @@ function initialize_powers(param)
 
 	insertionpowers = Power[]
 	for insertion in param[:insertions]
-		if insertion == "cheapest"
+		if insertion == "cheapest" || insertion == "dp"
 			push!(insertionpowers, Power(insertion, 0.0, copy(weights), copy(scores),
 				  copy(count)))
 		else
