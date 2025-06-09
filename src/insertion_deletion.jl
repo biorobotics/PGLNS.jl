@@ -53,6 +53,7 @@ function remove_insert(current::Tour, dist, member,
         for insertion_idx in 1:length(powers["insertion"])
           if powers["insertions"][insertion_idx].name == "dp"
             prev_dp_weight = powers["insertions"][insertion_idx].weight[phase]
+            powers["insertion_total"][phase] -= prev_dp_weight
             powers["insertions"][insertion_idx].weight[phase] = 0.
           end
         end
@@ -68,6 +69,7 @@ function remove_insert(current::Tour, dist, member,
       for insertion_idx in 1:length(powers["insertions"])
         if powers["insertions"][insertion_idx].name == "dp"
           prev_dp_weight = powers["insertions"][insertion_idx].weight[phase]
+          powers["insertion_total"][phase] -= prev_dp_weight
           powers["insertions"][insertion_idx].weight[phase] = 0.
         end
       end
@@ -176,6 +178,7 @@ function remove_insert(current::Tour, dist, member,
         for insertion_idx in 1:length(powers["insertions"])
           if powers["insertions"][insertion_idx].name == "dp"
             powers["insertions"][insertion_idx].weight[phase] = prev_dp_weight
+            powers["insertion_total"][phase] += prev_dp_weight
           end
         end
       end
@@ -187,6 +190,7 @@ function remove_insert(current::Tour, dist, member,
       for insertion_idx in 1:length(powers["insertions"])
         if powers["insertions"][insertion_idx].name == "dp"
           powers["insertions"][insertion_idx].weight[phase] = prev_dp_weight
+          powers["insertion_total"][phase] += prev_dp_weight
         end
       end
     end
