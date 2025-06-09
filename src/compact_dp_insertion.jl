@@ -30,10 +30,11 @@ struct VDInfo
   seen_update_time::Float64
   open_push_time::Float64
   goal_check_time::Float64
+  compact_before_per_thread::Vector{Array{Bool, 2}}
 end
 
-function VDInfo(dist::AbstractArray{Int64, 2}, sets::Vector{Vector{Int64}}, membership::Vector{Int64}, inf_val::Int64)
-  vd_info = VDInfo(ones(Bool, length(membership), length(sets)), zeros(Bool, length(sets), length(sets)), zeros(12)...)
+function VDInfo(dist::AbstractArray{Int64, 2}, sets::Vector{Vector{Int64}}, membership::Vector{Int64}, inf_val::Int64, nthreads::Int64)
+  vd_info = VDInfo(ones(Bool, length(membership), length(sets)), zeros(Bool, length(sets), length(sets)), zeros(12)..., [ones(Bool, length(membership), 20) for thread_idx=1:nthreads])
   if length(sets) == 0
     return vd_info
   end
@@ -71,7 +72,7 @@ end
 
 # Note: this whole function assumes open tsp, doesn't account for cost of returning to depot.
 # Not a fundamental limitation, I just didn't implement it to handle closed TSP
-function dp_insertion!(sets_to_insert::Vector{Int64}, dist::AbstractArray{Int64, 2}, sets::Vector{Vector{Int64}}, membership::Vector{Int64}, inf_val::Int64, stop_time::Float64, vd_info::VDInfo, partial_tour::Vector{Int64})
+function dp_insertion!(sets_to_insert::Vector{Int64}, dist::AbstractArray{Int64, 2}, sets::Vector{Vector{Int64}}, membership::Vector{Int64}, inf_val::Int64, stop_time::Float64, vd_info::VDInfo, partial_tour::Vector{Int64}, thread_idx::Int64)
   prev_nodes = Vector{VDNode}()
   cur_nodes = Vector{VDNode}()
   root_node = VDNode(1, Vector{VDNode}(), zeros(Bool, length(sets_to_insert)), 1, 0)
@@ -102,6 +103,12 @@ function dp_insertion!(sets_to_insert::Vector{Int64}, dist::AbstractArray{Int64,
     Pmax = length(sets) - sum(vd_info.before_set_to_set[:, set_idx])
     for tour_idx=Pmin:Pmax
       push!(removed_set_indices_per_tour_idx[tour_idx], removed_set_idx)
+    end
+  end
+
+  for (compact_set_idx, set_idx) in enumerate(sets_to_insert)
+    for node_idx=1:length(membership)
+      vd_info.compact_before_per_thread[thread_idx][node_idx, compact_set_idx] = vd_info.before[node_idx, set_idx]
     end
   end
 
@@ -156,7 +163,7 @@ function dp_insertion!(sets_to_insert::Vector{Int64}, dist::AbstractArray{Int64,
           # Check if unvisited removed customer is in BEFORE[node_idx]. If so, prune
           prune = false
           for removed_set_idx2 in unvisited_removed_sets
-            if removed_set_idx2 != -1 && vd_info.before[node_idx, sets_to_insert[removed_set_idx2]]
+            if removed_set_idx2 != -1 && vd_info.compact_before_per_thread[thread_idx][node_idx, removed_set_idx2]
               prune = true
               break
             end

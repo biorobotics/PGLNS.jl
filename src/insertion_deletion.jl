@@ -185,7 +185,7 @@ function remove_insert_dp(current::Tour, dist::AbstractArray{Int64,2}, member::A
     # sort!(sets_to_insert)
   end
 
-	trial.tour = dp_insertion!(sets_to_insert, dist, sets, member, inf_val, stop_time, vd_info, trial.tour)
+	trial.tour = dp_insertion!(sets_to_insert, dist, sets, member, inf_val, stop_time, vd_info, trial.tour, thread_idx)
   if length(trial.tour) == 0
     bt = time()
     lock(current_lock)
@@ -196,7 +196,7 @@ function remove_insert_dp(current::Tour, dist::AbstractArray{Int64,2}, member::A
     finally
       unlock(current_lock)
     end
-    return trial, true
+    # return trial, true
   else
     trial.cost = tour_cost(trial.tour, dist)
     if trial.cost >= inf_val
@@ -223,7 +223,7 @@ function remove_insert_dp(current::Tour, dist::AbstractArray{Int64,2}, member::A
         finally
           unlock(current_lock)
         end
-        return trial, true
+        # return trial, true
       end
     end
   end

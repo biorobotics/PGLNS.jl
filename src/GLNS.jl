@@ -98,7 +98,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
   if do_dp_insertion
     # vd_info = VDInfo(dist, sets, membership, inf_val, param[:max_removals])
     # vd_info = VDInfo(dist, sets, membership, inf_val, num_sets)
-    vd_info = VDInfo(dist, sets, membership, inf_val)
+    vd_info = VDInfo(dist, sets, membership, inf_val, nthreads)
   else
     vd_info = VDInfo(zeros(Int64, 1, 1), Vector{Vector{Int64}}(), zeros(Int64, 1), inf_val)
   end
