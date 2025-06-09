@@ -196,7 +196,7 @@ function remove_insert_dp(current::Tour, dist::AbstractArray{Int64,2}, member::A
     finally
       unlock(current_lock)
     end
-    return trial, true
+    # return trial, true
   else
     trial.cost = tour_cost(trial.tour, dist)
     if trial.cost >= inf_val
@@ -223,7 +223,7 @@ function remove_insert_dp(current::Tour, dist::AbstractArray{Int64,2}, member::A
         finally
           unlock(current_lock)
         end
-        return trial, true
+        # return trial, true
       end
     end
   end
