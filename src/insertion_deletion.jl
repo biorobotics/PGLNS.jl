@@ -143,7 +143,7 @@ function remove_insert(current::Tour, dist, member,
   # we wouldn't update trial.cost
   if rand() < param[:prob_reopt]
     opt_cycle!(trial, dist, sets_unshuffled, member, param, setdist, "partial")
-  elseif insertion.name != "dp"
+  else
     trial.cost = tour_cost(trial.tour, dist)
   end
 
