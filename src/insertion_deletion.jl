@@ -143,6 +143,7 @@ function remove_insert_dp(current::Tour, dist::AbstractArray{Int64,2}, member::A
     unlock(current_lock)
   end
 
+  #=
   if trial.cost >= inf_val
     # Check if we took an infinite cost edge. When doing lazy edge evaluation in IRG, we can update the best tour
     # to one with slightly lower cost, but when we add up the rounded edge costs, we actually get something worse than the incumbent.
@@ -159,6 +160,7 @@ function remove_insert_dp(current::Tour, dist::AbstractArray{Int64,2}, member::A
       throw("Trying to repair infeasible tour using DP")
     end
   end
+  =#
 
   # I'm doing this to avoid headaches of figuring out where node 1 used to be after removing it
   idx1 = findfirst(==(1), trial.tour)
@@ -167,6 +169,7 @@ function remove_insert_dp(current::Tour, dist::AbstractArray{Int64,2}, member::A
 	num_removals = rand(param[:min_removals]:param[:max_removals])
 
   removal_idx = 0
+  if trial.cost >= inf_val
   if update_powers
     bt = time()
     lock(powers_lock)
@@ -217,6 +220,7 @@ function remove_insert_dp(current::Tour, dist::AbstractArray{Int64,2}, member::A
       # it's possible that the triangle inequality violation makes DP give a higher-cost tour than the
       # incumbent, and thus the total cost might be >= inf_val
       inf_edge = false
+      #=
       for (node_idx1, node_idx2) in zip(trial.tour[1:end-1], trial.tour[2:end])
         if dist[node_idx1, node_idx2] == inf_val
           inf_edge = true
@@ -224,6 +228,7 @@ function remove_insert_dp(current::Tour, dist::AbstractArray{Int64,2}, member::A
         end
       end
       inf_edge |= (dist[trial.tour[end], trial.tour[1]] == inf_val)
+      =#
       if inf_edge
         throw("DP insertion gave infinite cost tour")
       else

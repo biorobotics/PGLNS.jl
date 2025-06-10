@@ -222,7 +222,7 @@ function dp_insertion!(sets_to_insert::Vector{Int64}, dist::AbstractArray{Int64,
 
   # No solution
   if length(cur_nodes) == 0
-    println("No solution found by A*")
+    # println("No solution found by A*")
     return Vector{Int64}()
   end
 
