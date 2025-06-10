@@ -157,7 +157,7 @@ function dp_insertion!(sets_to_insert::Vector{Int64}, dist::AbstractArray{Int64,
         this_set = removed_set_idx == -1 ? [partial_tour[next_nonremoved_idx]] : sets[set_idx]
         for node_idx in this_set
           h_val = num_nonremoved_visited == length(partial_tour) ? 0 : dist[node_idx, partial_tour[next_nonremoved_idx]] + h_vals[next_nonremoved_idx]
-          if pop.g_val + dist[pop.final_node_idx, node_idx] + h_val > ub
+          if pop.g_val + dist[pop.final_node_idx, node_idx] + h_val >= ub
             continue
           end
 
