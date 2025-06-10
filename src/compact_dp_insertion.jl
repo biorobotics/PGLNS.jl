@@ -71,11 +71,18 @@ end
 
 # Note: this whole function assumes open tsp, doesn't account for cost of returning to depot.
 # Not a fundamental limitation, I just didn't implement it to handle closed TSP
-function dp_insertion!(sets_to_insert::Vector{Int64}, dist::AbstractArray{Int64, 2}, sets::Vector{Vector{Int64}}, membership::Vector{Int64}, inf_val::Int64, stop_time::Float64, vd_info::VDInfo, partial_tour::Vector{Int64})
+function dp_insertion!(sets_to_insert::Vector{Int64}, dist::AbstractArray{Int64, 2}, sets::Vector{Vector{Int64}}, membership::Vector{Int64}, inf_val::Int64, stop_time::Float64, vd_info::VDInfo, partial_tour::Vector{Int64}, ub::Int64)
   prev_nodes = Vector{VDNode}()
   cur_nodes = Vector{VDNode}()
   root_node = VDNode(1, Vector{VDNode}(), zeros(Bool, length(sets_to_insert)), 1, 0)
   push!(prev_nodes, root_node)
+
+  # When the next unvisted index in partial_tour is tour_idx, the h value is dist[node_idx, partial_tour[tour_idx]] + h_vals[tour_idx]
+  h_vals = Vector{Int64}(undef, length(partial_tour))
+  h_vals[length(partial_tour)] = 0
+  for tour_idx=length(partial_tour)-1:-1:1
+    h_vals[tour_idx] = dist[partial_tour[tour_idx], partial_tour[tour_idx + 1]] + h_vals[tour_idx + 1]
+  end
 
   #=
   known_key = (0, zeros(Bool, length(sets_to_insert)), 0)
@@ -149,6 +156,11 @@ function dp_insertion!(sets_to_insert::Vector{Int64}, dist::AbstractArray{Int64,
 
         this_set = removed_set_idx == -1 ? [partial_tour[next_nonremoved_idx]] : sets[set_idx]
         for node_idx in this_set
+          h_val = num_nonremoved_visited == length(partial_tour) ? 0 : dist[node_idx, partial_tour[next_nonremoved_idx]] + h_vals[next_nonremoved_idx]
+          if pop.g_val + dist[pop.final_node_idx, node_idx] + h_val > ub
+            continue
+          end
+
           if dist[pop.final_node_idx, node_idx] == inf_val
             continue
           end

@@ -164,6 +164,8 @@ function remove_insert_dp(current::Tour, dist::AbstractArray{Int64,2}, member::A
   idx1 = findfirst(==(1), trial.tour)
   trial.tour = [trial.tour[idx1:end]; trial.tour[1:idx1-1]]
 
+  prev_cost = trial.cost
+
 	num_removals = rand(param[:min_removals]:param[:max_removals])
 
   removal_idx = 0
@@ -198,7 +200,7 @@ function remove_insert_dp(current::Tour, dist::AbstractArray{Int64,2}, member::A
     # sort!(sets_to_insert)
   end
 
-	trial.tour = dp_insertion!(sets_to_insert, dist, sets, member, inf_val, stop_time, vd_info, trial.tour)
+	trial.tour = dp_insertion!(sets_to_insert, dist, sets, member, inf_val, stop_time, vd_info, trial.tour, prev_cost)
   if length(trial.tour) == 0
     bt = time()
     lock(current_lock)
