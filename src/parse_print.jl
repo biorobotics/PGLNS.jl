@@ -512,7 +512,7 @@ end
 
 """print tour summary at end of execution"""
 function print_summary(lowest::Tour, timer::Float64, member::Array{Int64,1},
-						param::Dict{Symbol,Any}, tour_history::Array{Tuple{Float64, Array{Int64,1}, Int64},1}, cost_mat_read_time::Float64, instance_read_time::Float64, num_trials_feasible::Int64, num_trials::Int64, did_timeout::Bool, lock_times::Vector{Float64}, before_time::Float64)
+						param::Dict{Symbol,Any}, tour_history::Array{Tuple{Float64, Array{Int64,1}, Int64},1}, cost_mat_read_time::Float64, instance_read_time::Float64, num_trials_feasible::Int64, num_trials::Int64, did_timeout::Bool, lock_times::Vector{Float64}, before_time::Float64, time_spent_waiting_for_termination::Float64)
   print_start_time = time_ns()
 	if param[:print_output] == 3 && !param[:timeout] && !param[:budget_met]
 		progress_bar(param[:cold_trials], 1.0, lowest.cost, round(timer, digits=1))
@@ -549,6 +549,7 @@ function print_summary(lowest::Tour, timer::Float64, member::Array{Int64,1},
 			write(s, "Num Trials       : ", string(num_trials), "\n")
 			write(s, "Lock Times       : ", string(lock_times), "\n")
 			write(s, "Before Time      : ", string(before_time), " sec\n")
+			write(s, "Time Spent Waiting for Termination      : ", string(time_spent_waiting_for_termination), " sec\n")
 			write(s, "Tour History     :\n")
       for tour in tour_history
         write(s, string(tour), "\n")

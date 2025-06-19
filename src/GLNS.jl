@@ -109,6 +109,8 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
 
   triangle_violation = false
 
+  time_spent_waiting_for_termination = 0.
+
 	while !triangle_violation
     if count[:cold_trial] > param[:cold_trials] && !stop_upon_budget
       break
@@ -134,6 +136,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
     end
 
     while count[:warm_trial] <= param[:warm_trials] && !triangle_violation
+      best_update_time = time_ns()
       iter_count = 1
       current = tour_copy(best)
       temperature = 1.442 * param[:accept_percentage] * best.cost
@@ -301,6 +304,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
           lock_times[thread_idx] += at - bt
           try
             if accept && trial.cost < best.cost
+              best_update_time = time_ns()
               updated_best = true
               best = tour_copy(trial)
               timer = (time_ns() - start_time)/1.0e9
@@ -346,6 +350,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
             try
               # Uncomment || nthreads = 1 to match GLNS
               if trial.cost < best.cost # || nthreads == 1
+                best_update_time = time_ns()
                 best = tour_copy(trial)
                 # print_best(count, param, best, lowest, init_time)
                 timer = (time_ns() - start_time)/1.0e9
@@ -423,6 +428,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
       if param[:budget_met] || triangle_violation
         break
       end
+      time_spent_waiting_for_termination += (time_ns() - best_update_time)/1e9
       if time() - init_time > param[:max_time]
         param[:timeout] = true
         break
@@ -443,7 +449,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
     push!(tour_history, (round((time_ns() - start_time_for_tour_history)/1.0e9, digits=3), lowest.tour, lowest.cost))
   end
 
-  print_summary(lowest, timer, membership, param, tour_history, cost_mat_read_time, instance_read_time, num_trials_feasible, num_trials, param[:timeout], lock_times, before_time)
+  print_summary(lowest, timer, membership, param, tour_history, cost_mat_read_time, instance_read_time, num_trials_feasible, num_trials, param[:timeout], lock_times, before_time, time_spent_waiting_for_termination)
 
   @assert(lowest.cost == tour_cost(lowest.tour, dist))
   @assert(length(lowest.tour) == num_sets)
