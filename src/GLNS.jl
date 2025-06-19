@@ -95,10 +95,14 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
   stop_upon_budget = param[:budget] != typemin(Int64)
 
   do_dp_insertion = true
+  before_time = 0.
   if do_dp_insertion
     # vd_info = VDInfo(dist, sets, membership, inf_val, param[:max_removals])
     # vd_info = VDInfo(dist, sets, membership, inf_val, num_sets)
+    bt = time_ns()
     vd_info = VDInfo(dist, sets, membership, inf_val)
+    at = time_ns()
+    before_time = (at - bt)/1e9
   else
     vd_info = VDInfo(zeros(Int64, 1, 1), Vector{Vector{Int64}}(), zeros(Int64, 1), inf_val)
   end
@@ -439,7 +443,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
     push!(tour_history, (round((time_ns() - start_time_for_tour_history)/1.0e9, digits=3), lowest.tour, lowest.cost))
   end
 
-  print_summary(lowest, timer, membership, param, tour_history, cost_mat_read_time, instance_read_time, num_trials_feasible, num_trials, param[:timeout], lock_times)
+  print_summary(lowest, timer, membership, param, tour_history, cost_mat_read_time, instance_read_time, num_trials_feasible, num_trials, param[:timeout], lock_times, before_time)
 
   @assert(lowest.cost == tour_cost(lowest.tour, dist))
   @assert(length(lowest.tour) == num_sets)
