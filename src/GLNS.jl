@@ -183,7 +183,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
           finally
             unlock(phase_lock)
           end
-          trial = remove_insert(current, dist, membership, setdist, sets, sets_unshuffled, powers, param, this_phase, powers_lock, current_lock, set_locks, update_powers, lock_times, thread_idx)
+          trial = remove_insert(current, dist, membership, setdist, sets, sets_unshuffled, powers, param, this_phase, powers_lock, current_lock, set_locks, update_powers, lock_times, thread_idx, inf_val)
 
           trial_infeasible = dist[trial.tour[end], trial.tour[1]] == inf_val
           @inbounds for i in 1:length(trial.tour)-1
@@ -222,7 +222,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
             end
 
             if accept
-              opt_cycle!(trial, dist, sets_unshuffled, membership, param, setdist, "full")
+              opt_cycle!(trial, dist, sets_unshuffled, membership, param, setdist, "full", inf_val)
               bt = time()
               lock(current_lock)
               at = time()
@@ -305,7 +305,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
           end
 
           if updated_best
-            opt_cycle!(trial, dist, sets_unshuffled, membership, param, setdist, "full")
+            opt_cycle!(trial, dist, sets_unshuffled, membership, param, setdist, "full", inf_val)
 
             bt = time()
             lock(best_lock)
