@@ -21,7 +21,7 @@ using Polyester: @batch
 using Base.Threads
 using ThreadPinning
 import Future
-include("compact_dp_insertion.jl")
+include("compact_astar_insertion.jl")
 include("utilities.jl")
 include("parse_print.jl")
 include("tour_optimizations.jl")
@@ -480,11 +480,12 @@ function parse_cmd(ARGS)
 		println("-budget=[Int]                    (default has no budget)")
 		println("-socket_port=[Int]               (default is 65432)")
 		println("-new_socket_each_instance=[filename]    (default is 0)")
+		println("-search_order=[astar, bfs]    (default is astar)")
 		exit(0)
 	end
 	int_flags = ["-max_time", "-trials", "-restarts", "-verbose", "-budget", "-socket_port", "-new_socket_each_instance", "-max_removals_cap"]
 	float_flags = ["-epsilon", "-reopt", "-num_iterations", "-latest_improvement", "-first_improvement", "-max_removal_fraction"]
-	string_flags = ["-mode", "-output", "-noise", "-devel", "-init_tour"]
+	string_flags = ["-mode", "-output", "-noise", "-devel", "-init_tour", "-search_order"]
 	filename = ""
 	optional_args = Dict{Symbol, Any}()
 	for arg in ARGS

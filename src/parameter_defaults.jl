@@ -140,6 +140,7 @@ function parameter_settings(num_vertices, num_sets, sets, problem_instance, args
 	param[:budget_met] = false
 	param[:min_set] = min_set(sets)
 	param[:min_removals] = (param[:max_removals] > 1 ? 2 : 1)
+	param[:search_order] = get(args, :search_order, "astar")
 	print_params(param)
 	
 	return param

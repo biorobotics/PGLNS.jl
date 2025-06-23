@@ -200,7 +200,11 @@ function remove_insert_dp(current::Tour, dist::AbstractArray{Int64,2}, member::A
     # sort!(sets_to_insert)
   end
 
-	trial.tour = dp_insertion!(sets_to_insert, dist, sets, member, inf_val, stop_time, vd_info, trial.tour, prev_cost)
+  if param[:search_order] == "astar"
+    trial.tour = astar_insertion!(sets_to_insert, dist, sets, member, inf_val, stop_time, vd_info, trial.tour, prev_cost)
+  else
+    trial.tour = dp_insertion!(sets_to_insert, dist, sets, member, inf_val, stop_time, vd_info, trial.tour, prev_cost)
+  end
   if length(trial.tour) == 0
     bt = time()
     lock(current_lock)
