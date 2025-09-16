@@ -71,6 +71,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
   tour_history = Array{Tuple{Float64, Array{Int64,1}, Int64},1}()
   num_trials_feasible = 0
   num_trials = 0
+  # time_per_trial = Vector{Float64}()
   num_trials_lock = ReentrantLock()
 
   set_locks = [ReentrantLock() for set=sets]
@@ -138,8 +139,10 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
       # for thread_idx=1:1 # Need to use this to match GLNS
         this_num_trials_feasible = 0
         this_num_trials = 0
+        # this_time_per_trial = Vector{Float64}()
         budget_met = false
         while true
+          bt_trial_time = time()
           do_break = false
           bt = time()
           lock(count_lock)
@@ -369,6 +372,10 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
             unlock(iter_count_lock)
           end
 
+          at_trial_time = time()
+          trial_time = at_trial_time - bt_trial_time
+          # push!(this_time_per_trial, trial_time)
+
           if time() - init_time > param[:max_time]
             break
           end
@@ -380,6 +387,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
         try
           num_trials += this_num_trials
           num_trials_feasible += this_num_trials_feasible
+          # append!(time_per_trial, this_time_per_trial)
         finally
           unlock(num_trials_lock)
         end
@@ -413,6 +421,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
     push!(tour_history, (round((time_ns() - start_time_for_tour_history)/1.0e9, digits=3), lowest.tour, lowest.cost))
   end
 
+  # print_summary(lowest, timer, membership, param, tour_history, cost_mat_read_time, instance_read_time, num_trials_feasible, num_trials, param[:timeout], lock_times, time_spent_waiting_for_termination, time_per_trial)
   print_summary(lowest, timer, membership, param, tour_history, cost_mat_read_time, instance_read_time, num_trials_feasible, num_trials, param[:timeout], lock_times, time_spent_waiting_for_termination)
 
   @assert(lowest.cost == tour_cost(lowest.tour, dist))
@@ -477,7 +486,7 @@ function parse_cmd(ARGS)
 	return filename, optional_args
 end
 
-function main(args, max_time::Float64, inf_val::Int64, given_initial_tours::AbstractArray{Int64,1}, dist::AbstractArray{Int64,2}, max_threads::Int64, pin_cores::Vector{Int64}=Vector{Int64}())
+function main(args, max_time::Float64, inf_val::Int64, given_initial_tours::AbstractArray{Int64,1}, dist::AbstractArray{Int64,2}, max_threads::Int64, pin_cores::Vector{Int64}=Vector{Int64}(), do_perf::Bool=false, perf_file::String="")
   start_time_for_tour_history = time_ns()
   problem_instance, optional_args = parse_cmd(args)
   problem_instance = String(problem_instance)
@@ -514,7 +523,40 @@ function main(args, max_time::Float64, inf_val::Int64, given_initial_tours::Abst
     num_vertices += 1
   end
 
+  # Perf code
+  perf_pid = -1
+  if do_perf
+    @assert(length(perf_file) != 0)
+    pid = string(getpid())
+    # timestr = string(time())
+    # Assumes we're just storing in the local directory so there aren't any slashes in the output file name. Also assumes perf_data has been created
+    num = 0
+    # cmd = `perf stat -p $pid -M tma_dram_bound,tma_l1_bound,tma_l2_bound,tma_l3_bound -e cache-references,cache-misses,L1-dcache-load-misses,L1-dcache-loads,L1-dcache-stores,L1-icache-load-misses,l2_rqsts.miss,l2_rqsts.references,LLC-loads,LLC-load-misses,LLC-stores,LLC-store-misses -o $perf_file`
+    # cmd = `perf stat -p $pid -M tma_dram_bound,tma_l1_bound,tma_l2_bound,tma_l3_bound -e cache-references,cache-misses,L1-dcache-load-misses,L1-dcache-loads,L1-dcache-stores,L1-icache-load-misses,l2_rqsts.miss,l2_rqsts.references,LLC-loads,LLC-load-misses,LLC-stores,LLC-store-misses,offcore_response.pf_l1d_and_sw.l3_hit.any_snoop -o $perf_file`
+    # cmd = `perf stat -p $pid -M tma_dram_bound,tma_l1_bound,tma_l2_bound,tma_l3_bound -e L1-dcache-load-misses,L1-dcache-loads,l2_rqsts.all_demand_data_rd,l2_rqsts.demand_data_rd_miss,LLC-loads,LLC-load-misses -o $perf_file`
+    # cmd = `perf stat -p $pid -M tma_l1_bound -o $perf_file`
+    # cmd = `perf stat -p $pid -M tma_dram_bound,tma_l1_bound,tma_l2_bound,tma_l3_bound -o $perf_file`
+    # cmd = `perf stat -p $pid -M tma_l1_bound -e L1-dcache-load-misses,L1-dcache-loads -o $perf_file`
+    # cmd = `perf stat -p $pid -e L1-dcache-load-misses,L1-dcache-loads,offcore_response.pf_l1d_and_sw.l3_hit.any_snoop,offcore_response.pf_l1d_and_sw.l3_miss.any_snoop -o $perf_file`
+    cmd = `perf stat -p $pid -M tma_l1_bound,tma_l2_bound,tma_l3_bound,tma_dram_bound -e LLC-loads,LLC-load-misses -o $perf_file`
+    # cmd = `perf stat -p $pid -M tma_dram_bound -o $perf_file`
+    perf_proc = run(pipeline(cmd, stdout=stdout, stderr=stdout); wait=false)
+    perf_pid = getpid(perf_proc)
+    # sleep(1)
+    # sleep(1)
+  end
+  min_elapsed_time = do_perf ? 0.2 : 0.
+  bt_for_perf = time_ns()
   timing_result = @timed GLNS.solver(problem_instance, given_initial_tours, start_time_for_tour_history, inf_val, num_vertices, num_sets, sets, dist, membership, instance_read_time, cost_mat_read_time, max_threads, powers, update_powers, pin_cores; optional_args...)
+  at_for_perf = time_ns()
+  while (at_for_perf - bt_for_perf)/1.0e9 < min_elapsed_time
+    timing_result = @timed GLNS.solver(problem_instance, given_initial_tours, start_time_for_tour_history, inf_val, num_vertices, num_sets, sets, dist, membership, instance_read_time, cost_mat_read_time, max_threads, powers, update_powers, pin_cores; optional_args...)
+    at_for_perf = time_ns()
+  end
+  if do_perf
+    @assert(perf_pid != -1)
+    run(`kill -2 $perf_pid`)
+  end
   if get(optional_args, :verbose, 0) == 3
     println("Compile time: ", timing_result.compile_time)
   end
