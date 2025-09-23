@@ -511,7 +511,7 @@ end
 
 
 """print tour summary at end of execution"""
-function print_summary(lowest::Tour, timer::Float64, member::Array{Int64,1},
+function print_summary(lowest::Tour, timer::Float64, proc_timer::Float64, member::Array{Int64,1},
 						param::Dict{Symbol,Any}, tour_history::Array{Tuple{Float64, Array{Int64,1}, Int64},1}, cost_mat_read_time::Float64, instance_read_time::Float64, num_trials_feasible::Int64, num_trials::Int64, did_timeout::Bool, lock_times::Vector{Float64}, time_spent_waiting_for_termination::Float64) # , time_per_trial::Vector{Float64})
   print_start_time = time_ns()
 	if param[:print_output] == 3 && !param[:timeout] && !param[:budget_met]
@@ -543,6 +543,7 @@ function print_summary(lowest::Tour, timer::Float64, member::Array{Int64,1},
 			# write(s, "Cost Mat Rd Time : ", string(round(cost_mat_read_time, digits=3)), " sec\n")
 			# write(s, "Instance Rd Time : ", string(round(instance_read_time, digits=3)), " sec\n")
 			write(s, "Solver Time      : ", string(timer), " sec\n")
+			write(s, "Time in Process  : ", string(proc_timer), " sec\n")
 			write(s, "Cost Mat Rd Time : ", string(cost_mat_read_time), " sec\n")
 			write(s, "Instance Rd Time : ", string(instance_read_time), " sec\n")
 			write(s, "Timed out? : ", string(did_timeout), "\n")

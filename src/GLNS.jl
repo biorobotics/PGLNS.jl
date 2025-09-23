@@ -17,6 +17,7 @@ using Random
 using Sockets
 using Printf
 using NPZ
+using CPUTime
 using Polyester: @batch
 using Base.Threads
 using ThreadPinning
@@ -57,6 +58,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
 	lowest = Tour(Int64[], typemax(Int64))
 
 	start_time = time_ns()
+  start_proc_time = CPUtime_us()
 	# compute set distances which will be helpful
 	setdist = set_vertex_dist(dist, num_sets, membership)
   if length(powers) == 0
@@ -421,8 +423,9 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
     push!(tour_history, (round((time_ns() - start_time_for_tour_history)/1.0e9, digits=3), lowest.tour, lowest.cost))
   end
 
-  # print_summary(lowest, timer, membership, param, tour_history, cost_mat_read_time, instance_read_time, num_trials_feasible, num_trials, param[:timeout], lock_times, time_spent_waiting_for_termination, time_per_trial)
-  print_summary(lowest, timer, membership, param, tour_history, cost_mat_read_time, instance_read_time, num_trials_feasible, num_trials, param[:timeout], lock_times, time_spent_waiting_for_termination)
+  proc_timer = (CPUtime_us() - start_proc_time)/1e6
+  # print_summary(lowest, timer, proc_timer, membership, param, tour_history, cost_mat_read_time, instance_read_time, num_trials_feasible, num_trials, param[:timeout], lock_times, time_spent_waiting_for_termination, time_per_trial)
+  print_summary(lowest, timer, proc_timer, membership, param, tour_history, cost_mat_read_time, instance_read_time, num_trials_feasible, num_trials, param[:timeout], lock_times, time_spent_waiting_for_termination)
 
   @assert(lowest.cost == tour_cost(lowest.tour, dist))
   @assert(length(lowest.tour) == num_sets)
