@@ -15,6 +15,130 @@
 using Base.Threads
 include("dag_dfs.jl")
 
+function compute_bid_set(tour::AbstractArray{Int64, 1}, inserted_sets::Set{Int64}, most_recent_insertion_tour_idx::Int64, member::AbstractArray{Int64, 1}, dist::AbstractArray{Int64, 2})
+  bid_set = Vector{Int64}()
+  push!(bid_set, member[tour[most_recent_insertion_tour_idx]])
+
+  bid_segment = Vector{Int64}()
+  push!(bid_segment, tour[most_recent_insertion_tour_idx])
+
+  # Walk forward until we get something not in inserted_sets
+  tour_idx_after = -1
+  node_after = -1
+  tour_idx2 = mod(most_recent_insertion_tour_idx + 1 - 1, length(tour)) + 1 # The -1 before the mod and +1 after the mod is to handle julia's 1-based indexing
+  while true
+    node_idx2 = tour[tour_idx2]
+    if !(member[node_idx2] in inserted_sets)
+      node_after = node_idx2
+      tour_idx_after = tour_idx2
+      break
+    end
+    push!(bid_set, member[node_idx2])
+    push!(bid_segment, node_idx2)
+    tour_idx2 = mod(tour_idx2 + 1 - 1, length(tour)) + 1
+  end
+  if tour_idx_after == -1
+    throw("Did not find node_idx_after that is not in inserted_sets")
+  end
+
+  # Walk backward until we get something not in inserted_sets
+  tour_idx_before = -1
+  node_before = -1
+  tour_idx2 = mod(most_recent_insertion_tour_idx - 1 - 1, length(tour)) + 1 # The -1 before the mod and +1 after the mod is to handle julia's 1-based indexing
+  while true
+    node_idx2 = tour[tour_idx2]
+    if !(member[node_idx2] in inserted_sets)
+      node_before = node_idx2
+      tour_idx_before = tour_idx2
+      break
+    end
+    push!(bid_set, member[node_idx2])
+    insert!(bid_segment, 1, node_idx2)
+    tour_idx2 = mod(tour_idx2 - 1 - 1, length(tour)) + 1
+  end
+  if tour_idx_before == -1
+    throw("Did not find node_idx_before that is not in inserted_sets")
+  end
+
+  bid_val = sum([dist[node_idx1, node_idx2] for (node_idx1, node_idx2) in zip(tour[tour_idx_before:tour_idx_after - 1], tour[tour_idx_before + 1:tour_idx_after])]) - dist[node_before, node_after]
+  return bid_set, bid_val, node_before, bid_segment
+end
+
+function auctioneer_remove(tour_before_removal, dist, member,
+                           powers, phase_str::String, min_removals::Int64, max_removals::Int64)
+  phase = Symbol(phase_str)
+  tour = copy(tour_before_removal)
+
+  # I'm doing this to avoid headaches of figuring out where node 1 used to be after removing it
+  idx1 = findfirst(==(1), tour)
+  tour = [tour[idx1:end]; tour[1:idx1-1]]
+
+	# pivot_tour!(tour)
+	num_removals = rand(min_removals:max_removals)
+
+  removal_idx = power_select(powers["removals"], powers["removal_total"], phase)
+  removal = powers["removals"][removal_idx]
+	if removal.name == "distance"
+		sets_to_insert = distance_removal!(tour, dist, num_removals,
+													member, removal.value)
+  elseif removal.name == "worst"
+		sets_to_insert = worst_removal!(tour, dist, num_removals,
+													member, removal.value)
+	else
+		sets_to_insert = segment_removal!(tour, num_removals, member)
+	end
+
+  # If we removed 1, put it back
+  if tour[1] != 1
+    tour = [1; tour]
+    idx1 = findfirst(==(1), sets_to_insert) # Assume node 1 is in set 1
+    splice!(sets_to_insert, idx1)
+  end
+
+  bid_sets = Vector{Vector{Int64}}()
+  bid_vals = Vector{Int64}()
+  bid_before_nodes = Vector{Int64}()
+  bid_segments = Vector{Vector{Int64}}()
+  for (removed_set_idx, set_idx) in enumerate(sets_to_insert)
+    for (tour_idx, node_idx) in enumerate(tour_before_removal)
+      if member[node_idx] != set_idx
+        continue
+      end
+      bid_set, bid_val, bid_before_node, bid_segment = compute_bid_set(tour_before_removal, Set(sets_to_insert[1:removed_set_idx]), tour_idx, member, dist)
+      push!(bid_sets, bid_set)
+      push!(bid_vals, bid_val)
+      push!(bid_before_nodes, bid_before_node)
+      push!(bid_segments, bid_segment)
+      break
+    end
+  end
+
+  return bid_sets, bid_vals, bid_before_nodes, bid_segments, sets_to_insert
+end
+
+function compute_bids(tour::Vector{Int64}, dist, member,
+                      setdist::Distsv, sets::Vector{Vector{Int64}}, sets_to_insert::AbstractArray{Int64,1},
+                      powers, phase_str::String)
+  phase = Symbol(phase_str)
+  insertion_idx = 0
+  noise_idx = 0
+  insertion_idx = power_select(powers["insertions"], powers["insertion_total"], phase)
+  noise_idx = power_select(powers["noise"], powers["noise_total"], phase)
+
+  insertion = powers["insertions"][insertion_idx]
+  noise = powers["noise"][noise_idx]
+
+  randomize_sets_no_locks!(sets, sets_to_insert)
+
+	# then perform insertion
+	if insertion.name == "cheapest"
+		return cheapest_insertion_get_bids!(tour, sets_to_insert, dist, setdist, sets, member)
+	else
+		return randpdf_insertion_get_bids!(tour, sets_to_insert, dist, setdist, sets,
+							insertion.value, noise, member)
+	end
+end
+
 """
 Select a removal and an insertion method using powers, and then perform
 removal followed by insertion on tour.  Operation done in place.
@@ -213,6 +337,65 @@ function randpdf_insertion!(tour::Array{Int64,1}, sets_to_insert::Array{Int64,1}
     end
 end
 
+"""  choose set with pdf_select, and then insert in best place with noise  """
+function randpdf_insertion_get_bids!(tour::AbstractArray{Int64,1}, sets_to_insert::AbstractArray{Int64,1},
+							dist::AbstractArray{Int64,2}, setdist::Distsv,
+							sets::Vector{Vector{Int64}}, power::Float64, noise::Power, member::AbstractArray{Int64, 1})
+
+    bid_sets = Vector{Vector{Int64}}()
+    bid_vals = Vector{Int64}()
+    bid_before_nodes = Vector{Int64}()
+    bid_segments = Vector{Vector{Int64}}()
+    inserted_sets = Set{Int64}()
+
+    mindist = [typemax(Int64) for i=1:length(sets_to_insert)]
+    @inbounds for i = 1:length(sets_to_insert)
+        set = sets_to_insert[i]
+        for vertex in tour
+            if setdist.min_sv[set, vertex] < mindist[i]
+                mindist[i] = setdist.min_sv[set, vertex]
+            end
+        end
+    end
+    new_vertex_in_tour = 0
+
+    @inbounds while length(sets_to_insert) > 0
+        if new_vertex_in_tour != 0
+            for i = 1:length(sets_to_insert)
+                set = sets_to_insert[i]
+                if setdist.min_sv[set, new_vertex_in_tour] < mindist[i]
+                    mindist[i] = setdist.min_sv[set, new_vertex_in_tour]
+                end
+            end
+        end
+        set_index = pdf_select(mindist, power) # select set to insert from pdf
+        # find the closest vertex and the best insertion in that vertex
+        nearest_set = sets_to_insert[set_index]
+        if noise.name == "subset"
+          bestv, bestpos = insert_subset_lb(tour, dist, sets[nearest_set], nearest_set,
+                            setdist, noise.value)
+        else
+          bestv, bestpos =
+              insert_lb_no_lock(tour, dist, sets[nearest_set], nearest_set, setdist, noise.value)
+        end
+        insert!(tour, bestpos, bestv)  # perform the insertion
+        new_vertex_in_tour = bestv
+        # remove the inserted set from data structures
+        splice!(sets_to_insert, set_index)
+        splice!(mindist, set_index)
+
+        push!(inserted_sets, nearest_set)
+
+        bid_set, bid_val, bid_before_node, bid_segment = compute_bid_set(tour, inserted_sets, bestpos, member, dist)
+
+        push!(bid_sets, bid_set)
+        push!(bid_vals, bid_val)
+        push!(bid_before_nodes, bid_before_node)
+        push!(bid_segments, bid_segment)
+    end
+
+    return bid_sets, bid_vals, bid_before_nodes, bid_segments
+end
 
 function cheapest_insertion!(tour::Array{Int64,1}, sets_to_insert::Array{Int64,1},
 	dist, setdist::Distsv, sets::Vector{Vector{Int64}})
@@ -242,6 +425,51 @@ function cheapest_insertion!(tour::Array{Int64,1}, sets_to_insert::Array{Int64,1
     end
 end
 
+function cheapest_insertion_get_bids!(tour::AbstractArray{Int64,1}, sets_to_insert::AbstractArray{Int64,1},
+	dist, setdist::Distsv, sets::Vector{Vector{Int64}}, member::AbstractArray{Int64,1})
+
+  bid_sets = Vector{Vector{Int64}}()
+  bid_vals = Vector{Int64}()
+  bid_before_nodes = Vector{Int64}()
+  bid_segments = Vector{Int64}()
+  inserted_sets = Set{Int64}()
+
+    """
+	choose vertex that can be inserted most cheaply, and insert it in that position
+	"""
+	while length(sets_to_insert) > 0
+        best_cost = typemax(Int64)
+        best_v = 0
+        best_pos = 0
+        best_set = 0
+        for i = 1:length(sets_to_insert)
+            set_ind = sets_to_insert[i]
+            # find the best place to insert the vertex
+            best_v, best_pos, cost = insert_cost_lb(tour, dist, sets[set_ind], set_ind, setdist,
+										  best_v, best_pos, best_cost)
+            if cost < best_cost
+              best_set = i
+              best_cost = cost
+            end
+        end
+
+        # now, perform the insertion
+        insert!(tour, best_pos, best_v)
+        # remove the inserted set from data structures
+        splice!(sets_to_insert, best_set)
+
+        push!(inserted_sets, best_set)
+
+        bid_set, bid_val, bid_before_node, bid_segment = compute_bid_set(tour, inserted_sets, bestpos, member, dist)
+
+        push!(bid_sets, bid_set)
+        push!(bid_vals, bid_val)
+        push!(bid_before_nodes, bid_before_node)
+        push!(bid_segments, bid_segment)
+    end
+
+    return bid_sets, bid_vals, bid_before_nodes, bid_segments
+end
 
 """
 Given a tour and a set, this function finds the vertex in the set with minimum
@@ -275,6 +503,30 @@ best_position is i, then vertex should be inserted between tour[i-1] and tour[i]
       end
     finally
       unlock(set_lock)
+    end
+  end
+  return bestv, bestpos
+end
+
+@inline function insert_lb_no_lock(tour::Array{Int64,1}, dist, set::Array{Int64, 1},
+							setind::Int, setdist::Distsv, noise::Float64)
+	best_cost = typemax(Int64)
+	bestv = 0
+	bestpos = 0
+
+	@inbounds for i = 1:length(tour)
+		v1 = prev_tour(tour, i)
+		lb = setdist.vert_set[v1, setind] + setdist.set_vert[setind, tour[i]] - dist[v1, tour[i]]
+		lb > best_cost && continue
+
+    for v in set
+          insert_cost = dist[v1, v] + dist[v, tour[i]] - dist[v1, tour[i]]
+      noise > 0.0 && (insert_cost += round(Int64, noise * rand() * abs(insert_cost)))
+      if insert_cost < best_cost
+        best_cost = insert_cost
+        bestv = v
+        bestpos = i
+      end
     end
   end
   return bestv, bestpos

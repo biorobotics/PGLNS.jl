@@ -156,3 +156,34 @@ function parameter_settings(num_vertices, num_sets, sets, problem_instance, args
 	
 	return param
 end
+
+function parameter_settings_auction(mode::String)
+  param = Dict{Symbol, Any}()
+
+	############ default setting #####################
+	if mode == "default"
+		param[:insertions] = ["randpdf", "cheapest"]
+			
+	################## very_fast  ##########################
+	elseif mode == "fast"
+		param[:insertions] = ["randpdf"]
+	
+	################## attempt slow search  ##########################
+	elseif mode == "slow"
+		param[:insertions] = ["randpdf", "cheapest"]
+		
+	else
+		error("mode not recognized.  Use default, fast, or slow")
+	end
+
+  param[:insertion_powers] = [-10.0, -1.0, -0.5, 0.0, 0.5, 1.0, 10.0]
+	
+	# removal algs and powers
+  param[:removals] = ["distance", "worst", "segment"]
+  param[:removal_powers] = [-0.5, 0.0, 0.5, 1.0, 10.0]
+	
+	# parameters that are common for all modes
+	param[:noise] = "Add"
+	
+	return param
+end

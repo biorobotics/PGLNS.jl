@@ -45,6 +45,12 @@ function pivot_tour!(tour::Array{Int64,1})
 	tour = [tour[pivot:end]; tour[1:pivot-1]]
 end
 
+function randomize_sets_no_locks!(sets::Vector{Vector{Int64}}, sets_to_insert::AbstractArray{Int64, 1})
+	for i in sets_to_insert
+    shuffle!(sets[i])
+	end
+end
+
 
 function randomize_sets!(sets::Vector{Vector{Int64}}, sets_to_insert::Array{Int64, 1}, set_locks::Vector{ReentrantLock}, lock_times::Vector{Float64}, thread_idx::Int64)
 	for i in sets_to_insert
@@ -87,7 +93,7 @@ struct Distsv
 end
 
 
-function set_vertex_dist(dist::AbstractArray{Int64, 2}, num_sets::Int, member::Array{Int64,1})
+function set_vertex_dist(dist::AbstractArray{Int64, 2}, num_sets::Int, member::AbstractArray{Int64,1})
     """
 	Computes the minimum distance between each set and each vertex
 	Also compute the minimum distance from a set to a vertex, ignoring direction
@@ -260,10 +266,10 @@ end
 
 
 """ rand_select for randomize over all minimizers """
-@inline function rand_select(a::Array{Int64, 1}, val::Int)
+@inline function rand_select(a::Array{Int64, 1}, val::Int, rng=Random.default_rng())
 	inds = Int[]
 	@inbounds for i=1:length(a)
 		a[i] == val && (push!(inds, i))
 	end
-	return rand(inds)
+	return rand(rng, inds)
 end
