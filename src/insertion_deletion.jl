@@ -77,7 +77,7 @@ function auctioneer_remove(tour_before_removal, dist, member,
 	# pivot_tour!(tour)
 	num_removals = rand(rng, min_removals:max_removals)
 
-  removal_idx = power_select(powers["removals"], powers["removal_total"], phase)
+  removal_idx = power_select(powers["removals"], powers["removal_total"], phase, rng)
   removal = powers["removals"][removal_idx]
 
   removal_succeeded = false
