@@ -45,9 +45,9 @@ function pivot_tour!(tour::Array{Int64,1})
 	tour = [tour[pivot:end]; tour[1:pivot-1]]
 end
 
-function randomize_sets_no_locks!(sets::Vector{Vector{Int64}}, sets_to_insert::AbstractArray{Int64, 1})
+function randomize_sets_no_locks!(sets::Vector{Vector{Int64}}, sets_to_insert::AbstractArray{Int64, 1}, rng=Random.default_rng())
 	for i in sets_to_insert
-    shuffle!(sets[i])
+    shuffle!(rng, sets[i])
 	end
 end
 
@@ -258,8 +258,8 @@ end
 #####################################################
 #############  Incremental Shuffle ##################
 
-@inline function incremental_shuffle!(a::AbstractVector, i::Int)
-    j = i + floor(Int, rand() * (length(a) + 1 - i))
+@inline function incremental_shuffle!(a::AbstractVector, i::Int, rng=Random.default_rng())
+    j = i + floor(Int, rand(rng) * (length(a) + 1 - i))
    	a[j], a[i] = a[i], a[j]
 	return a[i]
 end

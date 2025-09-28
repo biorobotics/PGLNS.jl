@@ -65,34 +65,44 @@ function compute_bid_set(tour::AbstractArray{Int64, 1}, inserted_sets::Set{Int64
 end
 
 function auctioneer_remove(tour_before_removal, dist, member,
-                           powers, phase_str::String, min_removals::Int64, max_removals::Int64)
+                           powers, phase_str::String, min_removals::Int64, max_removals::Int64, rng)
   phase = Symbol(phase_str)
-  tour = copy(tour_before_removal)
 
   # I'm doing this to avoid headaches of figuring out where node 1 used to be after removing it
-  idx1 = findfirst(==(1), tour)
-  tour = [tour[idx1:end]; tour[1:idx1-1]]
+  idx1 = findfirst(==(1), tour_before_removal)
+  tour_before_removal = [tour_before_removal[idx1:end]; tour_before_removal[1:idx1-1]]
+
+  tour = copy(tour_before_removal)
 
 	# pivot_tour!(tour)
-	num_removals = rand(min_removals:max_removals)
+	num_removals = rand(rng, min_removals:max_removals)
 
   removal_idx = power_select(powers["removals"], powers["removal_total"], phase)
   removal = powers["removals"][removal_idx]
-	if removal.name == "distance"
-		sets_to_insert = distance_removal!(tour, dist, num_removals,
-													member, removal.value)
-  elseif removal.name == "worst"
-		sets_to_insert = worst_removal!(tour, dist, num_removals,
-													member, removal.value)
-	else
-		sets_to_insert = segment_removal!(tour, num_removals, member)
-	end
 
-  # If we removed 1, put it back
-  if tour[1] != 1
-    tour = [1; tour]
-    idx1 = findfirst(==(1), sets_to_insert) # Assume node 1 is in set 1
-    splice!(sets_to_insert, idx1)
+  removal_succeeded = false
+  sets_to_insert = Vector{Int64}()
+  while length(sets_to_insert) == 0
+    if removal.name == "distance"
+      sets_to_insert = distance_removal!(tour, dist, num_removals,
+                            member, removal.value, rng)
+    elseif removal.name == "worst"
+      sets_to_insert = worst_removal!(tour, dist, num_removals,
+                            member, removal.value, rng)
+    else
+      sets_to_insert = segment_removal!(tour, num_removals, member, rng)
+    end
+
+    # If we removed 1, put it back
+    if tour[1] != 1
+      tour = [1; tour]
+      idx1 = findfirst(==(1), sets_to_insert) # Assume node 1 is in set 1
+      splice!(sets_to_insert, idx1)
+    end
+
+    if length(sets_to_insert) == 0
+      tour = copy(tour_before_removal)
+    end
   end
 
   bid_sets = Vector{Vector{Int64}}()
@@ -118,24 +128,24 @@ end
 
 function compute_bids(tour::Vector{Int64}, dist, member,
                       setdist::Distsv, sets::Vector{Vector{Int64}}, sets_to_insert::AbstractArray{Int64,1},
-                      powers, phase_str::String)
+                      powers, phase_str::String, rng)
   phase = Symbol(phase_str)
   insertion_idx = 0
   noise_idx = 0
-  insertion_idx = power_select(powers["insertions"], powers["insertion_total"], phase)
-  noise_idx = power_select(powers["noise"], powers["noise_total"], phase)
+  insertion_idx = power_select(powers["insertions"], powers["insertion_total"], phase, rng)
+  noise_idx = power_select(powers["noise"], powers["noise_total"], phase, rng)
 
   insertion = powers["insertions"][insertion_idx]
   noise = powers["noise"][noise_idx]
 
-  randomize_sets_no_locks!(sets, sets_to_insert)
+  randomize_sets_no_locks!(sets, sets_to_insert, rng)
 
 	# then perform insertion
 	if insertion.name == "cheapest"
-		return cheapest_insertion_get_bids!(tour, sets_to_insert, dist, setdist, sets, member)
+		return cheapest_insertion_get_bids!(tour, sets_to_insert, dist, setdist, sets, member, rng)
 	else
 		return randpdf_insertion_get_bids!(tour, sets_to_insert, dist, setdist, sets,
-							insertion.value, noise, member)
+							insertion.value, noise, member, rng)
 	end
 end
 
@@ -259,10 +269,10 @@ and exponential distribution with lambda = power
 # goes from left of array if power is positive
 # and right of array if it is negative
 """
-function select_k(num::Int64, power::Float64)
+function select_k(num::Int64, power::Float64, rng=Random.default_rng())
 	base = (1/2)^abs(power)
 	# (1 - base^num)/(1 - base) is sum of geometric series
-	rand_select = (1 - base^num)/(1 - base) * rand()
+	rand_select = (1 - base^num)/(1 - base) * rand(rng)
 	bin = 1
 	@inbounds for k = 1:num
 		if rand_select < bin
@@ -279,18 +289,18 @@ end
 selecting a random k in 1 to length(weights) according to power
 and then selecting the kth smallest element in weights
 """
-function pdf_select(weights::Array{Int64,1}, power::Float64)
-    power == 0.0 && return rand(1:length(weights))
-    power > 9.0 && return rand_select(weights, maximum(weights))
-    power < - 9.0 && return rand_select(weights, minimum(weights))
+function pdf_select(weights::Array{Int64,1}, power::Float64, rng=Random.default_rng())
+    power == 0.0 && return rand(rng, 1:length(weights))
+    power > 9.0 && return rand_select(weights, maximum(weights), rng)
+    power < - 9.0 && return rand_select(weights, minimum(weights), rng)
 
 	# select kth smallest.  If 1 or length(weights), simply return
-	k = select_k(length(weights), power)
-	k == 1 && return rand_select(weights, minimum(weights))
-	k == length(weights) && return rand_select(weights, maximum(weights))
+	k = select_k(length(weights), power, rng)
+	k == 1 && return rand_select(weights, minimum(weights), rng)
+	k == length(weights) && return rand_select(weights, maximum(weights), rng)
 	val = partialsort(weights, k)
 
-	return rand_select(weights, val)
+	return rand_select(weights, val, rng)
 end
 
 
@@ -340,7 +350,7 @@ end
 """  choose set with pdf_select, and then insert in best place with noise  """
 function randpdf_insertion_get_bids!(tour::AbstractArray{Int64,1}, sets_to_insert::AbstractArray{Int64,1},
 							dist::AbstractArray{Int64,2}, setdist::Distsv,
-							sets::Vector{Vector{Int64}}, power::Float64, noise::Power, member::AbstractArray{Int64, 1})
+							sets::Vector{Vector{Int64}}, power::Float64, noise::Power, member::AbstractArray{Int64, 1}, rng=Random.default_rng())
 
     bid_sets = Vector{Vector{Int64}}()
     bid_vals = Vector{Int64}()
@@ -368,15 +378,15 @@ function randpdf_insertion_get_bids!(tour::AbstractArray{Int64,1}, sets_to_inser
                 end
             end
         end
-        set_index = pdf_select(mindist, power) # select set to insert from pdf
+        set_index = pdf_select(mindist, power, rng) # select set to insert from pdf
         # find the closest vertex and the best insertion in that vertex
         nearest_set = sets_to_insert[set_index]
         if noise.name == "subset"
           bestv, bestpos = insert_subset_lb(tour, dist, sets[nearest_set], nearest_set,
-                            setdist, noise.value)
+                            setdist, noise.value, rng)
         else
           bestv, bestpos =
-              insert_lb_no_lock(tour, dist, sets[nearest_set], nearest_set, setdist, noise.value)
+              insert_lb_no_lock(tour, dist, sets[nearest_set], nearest_set, setdist, noise.value, rng)
         end
         insert!(tour, bestpos, bestv)  # perform the insertion
         new_vertex_in_tour = bestv
@@ -509,7 +519,7 @@ best_position is i, then vertex should be inserted between tour[i-1] and tour[i]
 end
 
 @inline function insert_lb_no_lock(tour::Array{Int64,1}, dist, set::Array{Int64, 1},
-							setind::Int, setdist::Distsv, noise::Float64)
+							setind::Int, setdist::Distsv, noise::Float64, rng=Random.default_rng())
 	best_cost = typemax(Int64)
 	bestv = 0
 	bestpos = 0
@@ -521,7 +531,7 @@ end
 
     for v in set
           insert_cost = dist[v1, v] + dist[v, tour[i]] - dist[v1, tour[i]]
-      noise > 0.0 && (insert_cost += round(Int64, noise * rand() * abs(insert_cost)))
+      noise > 0.0 && (insert_cost += round(Int64, noise * rand(rng) * abs(insert_cost)))
       if insert_cost < best_cost
         best_cost = insert_cost
         bestv = v
@@ -534,14 +544,14 @@ end
 
 
 @inline function insert_subset_lb(tour::Array{Int64,1}, dist, set::Array{Int64, 1},
-							setind::Int, setdist::Distsv, noise::Float64)
+							setind::Int, setdist::Distsv, noise::Float64, rng=Random.default_rng())
 	best_cost = typemax(Int64)
 	bestv = 0
 	bestpos = 0
 	tour_inds = collect(1:length(tour))
 
 	@inbounds for i = 1:ceil(Int64, length(tour) * noise)
-		i = incremental_shuffle!(tour_inds, i)
+		i = incremental_shuffle!(tour_inds, i, rng)
 		v1 = prev_tour(tour, i)
 		lb = setdist.vert_set[v1, setind] + setdist.set_vert[setind, tour[i]] - dist[v1, tour[i]]
 		lb > best_cost && continue
@@ -633,11 +643,11 @@ Remove the vertices randomly, but biased towards those that add the most length 
 tour.  Bias is based on the power input.  Vertices are then selected via pdf select.
 """
 function worst_removal!(tour::Array{Int64,1}, dist,
-							num_to_remove::Int64, member, power::Float64)
+							num_to_remove::Int64, member, power::Float64, rng=Random.default_rng())
     deleted_sets = Array{Int}(undef, 0)
 	while length(deleted_sets) < num_to_remove
 		removal_costs = worst_vertices(tour, dist)
-		ind = pdf_select(removal_costs, power)
+		ind = pdf_select(removal_costs, power, rng)
 		set_to_delete = member[tour[ind]]
 
         # perform the deletion
@@ -649,8 +659,8 @@ end
 
 
 """ removing a single continuos segment of the tour of size num_remove """
-function segment_removal!(tour::Array{Int64, 1}, num_to_remove::Int64, member)
-	i = rand(1:length(tour))
+function segment_removal!(tour::Array{Int64, 1}, num_to_remove::Int64, member, rng=Random.default_rng())
+	i = rand(rng, 1:length(tour))
 	deleted_sets = Array{Int}(undef, 0)
 	while length(deleted_sets) < num_to_remove
 		i > length(tour) && (i = 1)
@@ -663,24 +673,24 @@ end
 
 """  pick a random vertex, and delete its closest neighbors  """
 function distance_removal!(tour::Array{Int64,1}, dist,
-							   num_to_remove::Int64, member, power::Float64)
+							   num_to_remove::Int64, member, power::Float64, rng=Random.default_rng())
     deleted_sets = Array{Int}(undef, 0)
     deleted_vertices = Array{Int}(undef, 0)
 
-    seed_index = rand(1:length(tour))
+    seed_index = rand(rng, 1:length(tour))
     push!(deleted_sets, member[tour[seed_index]])
     push!(deleted_vertices, tour[seed_index])
     splice!(tour, seed_index)
 
     while length(deleted_sets) < num_to_remove
         # pick a random vertex from the set of deleted vertices
-        seed_vertex = rand(deleted_vertices)
+        seed_vertex = rand(rng, deleted_vertices)
         # find closest vertex to the seed vertex that's still in the tour
         mindist = zeros(Int64, length(tour))
         for i = 1:length(tour)
-			mindist[i] = min(dist[seed_vertex, tour[i]], dist[tour[i], seed_vertex])
+          mindist[i] = min(dist[seed_vertex, tour[i]], dist[tour[i], seed_vertex])
         end
-        del_index = pdf_select(mindist, power)
+        del_index = pdf_select(mindist, power, rng)
         push!(deleted_sets, member[tour[del_index]])
         push!(deleted_vertices, tour[del_index])
         splice!(tour, del_index)
