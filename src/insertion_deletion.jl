@@ -52,7 +52,7 @@ function compute_bid_set(tour::AbstractArray{Int64, 1}, inserted_sets::Set{Int64
       tour_idx_before = tour_idx2
       break
     end
-    push!(bid_set, member[node_idx2])
+    insert!(bid_set, 1, member[node_idx2])
     insert!(bid_segment, 1, node_idx2)
     tour_idx2 = mod(tour_idx2 - 1 - 1, length(tour)) + 1
   end
@@ -61,67 +61,6 @@ function compute_bid_set(tour::AbstractArray{Int64, 1}, inserted_sets::Set{Int64
   end
 
   bid_val = sum([dist[node_idx1, node_idx2] for (node_idx1, node_idx2) in zip(tour[tour_idx_before:tour_idx_after - 1], tour[tour_idx_before + 1:tour_idx_after])]) - dist[node_before, node_after]
-  return bid_set, bid_val, node_before, node_after, bid_segment
-end
-
-function compute_bid_set_auctioneer(tour::AbstractArray{Int64, 1}, inserted_sets::Set{Int64}, most_recent_insertion_tour_idx::Int64, member::AbstractArray{Int64, 1}, dist::AbstractArray{Int64, 2}, nodes_post_removal_for_auctioneer::Set{Int64})
-  bid_set = Vector{Int64}()
-  push!(bid_set, member[tour[most_recent_insertion_tour_idx]])
-
-  bid_segment = Vector{Int64}()
-  push!(bid_segment, tour[most_recent_insertion_tour_idx])
-
-  # Walk forward until we get something not in inserted_sets
-  tour_idx2 = mod(most_recent_insertion_tour_idx + 1 - 1, length(tour)) + 1 # The -1 before the mod and +1 after the mod is to handle julia's 1-based indexing
-  while true
-    node_idx2 = tour[tour_idx2]
-    if !(member[node_idx2] in inserted_sets)
-      break
-    end
-    push!(bid_set, member[node_idx2])
-    push!(bid_segment, node_idx2)
-    tour_idx2 = mod(tour_idx2 + 1 - 1, length(tour)) + 1
-  end
-
-  # Walk forward until we get something in tour_post_removal_for_auctioneer
-  node_after = -1
-  while true
-    node_idx2 = tour[tour_idx2]
-    if node_idx2 in nodes_post_removal_for_auctioneer
-      node_after = node_idx2
-      break
-    end
-    tour_idx2 = mod(tour_idx2 + 1 - 1, length(tour)) + 1
-  end
-
-  if node_after == -1
-    throw("Did not find node after removed segment")
-  end
-
-  # Walk backward until we get something not in inserted_sets
-  tour_idx2 = mod(most_recent_insertion_tour_idx - 1 - 1, length(tour)) + 1 # The -1 before the mod and +1 after the mod is to handle julia's 1-based indexing
-  while true
-    node_idx2 = tour[tour_idx2]
-    if !(member[node_idx2] in inserted_sets)
-      break
-    end
-    push!(bid_set, member[node_idx2])
-    insert!(bid_segment, 1, node_idx2)
-    tour_idx2 = mod(tour_idx2 - 1 - 1, length(tour)) + 1
-  end
-
-  node_before = -1
-  # Walk backward until we get something in tour_post_removal_for_auctioneer
-  while true
-    node_idx2 = tour[tour_idx2]
-    if node_idx2 in nodes_post_removal_for_auctioneer
-      node_before = node_idx2
-      break
-    end
-    tour_idx2 = mod(tour_idx2 - 1 - 1, length(tour)) + 1
-  end
-
-  bid_val = sum([dist[node_idx1, node_idx2] for (node_idx1, node_idx2) in zip(bid_segment[1:end-1], bid_segment[2:end])]) + dist[node_before, bid_segment[1]] + dist[bid_segment[end], node_after] - dist[node_before, node_after]
   return bid_set, bid_val, node_before, node_after, bid_segment
 end
 
@@ -171,17 +110,19 @@ function auctioneer_remove(tour_before_removal, dist, member,
   bid_before_nodes = Vector{Int64}()
   bid_after_nodes = Vector{Int64}()
   bid_segments = Vector{Vector{Int64}}()
+  intermediate_tour = copy(tour_before_removal)
   for (removed_set_idx, set_idx) in enumerate(sets_to_insert)
-    for (tour_idx, node_idx) in enumerate(tour_before_removal)
+    for (tour_idx, node_idx) in enumerate(intermediate_tour)
       if member[node_idx] != set_idx
         continue
       end
-      bid_set, bid_val, bid_before_node, bid_after_node, bid_segment = compute_bid_set_auctioneer(tour_before_removal, Set(sets_to_insert[1:removed_set_idx]), tour_idx, member, dist, Set(tour))
+      bid_set, bid_val, bid_before_node, bid_after_node, bid_segment = compute_bid_set(intermediate_tour, Set(sets_to_insert[removed_set_idx:end]), tour_idx, member, dist)
       push!(bid_sets, bid_set)
       push!(bid_vals, bid_val)
       push!(bid_before_nodes, bid_before_node)
       push!(bid_after_nodes, bid_after_node)
       push!(bid_segments, bid_segment)
+      splice!(intermediate_tour, tour_idx)
       break
     end
   end
