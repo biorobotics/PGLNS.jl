@@ -146,7 +146,7 @@ function compute_bids(tour::Vector{Int64}, dist, member,
 
 	# then perform insertion
 	if insertion.name == "cheapest"
-		return cheapest_insertion_get_bids!(tour, sets_to_insert, dist, setdist, sets, member, rng)
+		return cheapest_insertion_get_bids!(tour, sets_to_insert, dist, setdist, sets, member)
 	else
 		return randpdf_insertion_get_bids!(tour, sets_to_insert, dist, setdist, sets,
 							insertion.value, noise, member, rng)
@@ -448,7 +448,7 @@ function cheapest_insertion_get_bids!(tour::AbstractArray{Int64,1}, sets_to_inse
   bid_vals = Vector{Int64}()
   bid_before_nodes = Vector{Int64}()
   bid_after_nodes = Vector{Int64}()
-  bid_segments = Vector{Int64}()
+  bid_segments = Vector{Vector{Int64}}()
   inserted_sets = Set{Int64}()
 
     """
@@ -475,9 +475,9 @@ function cheapest_insertion_get_bids!(tour::AbstractArray{Int64,1}, sets_to_inse
         # remove the inserted set from data structures
         splice!(sets_to_insert, best_set)
 
-        push!(inserted_sets, best_set)
+        push!(inserted_sets, member[best_v])
 
-        bid_set, bid_val, bid_before_node, bid_after_node, bid_segment = compute_bid_set(tour, inserted_sets, bestpos, member, dist)
+        bid_set, bid_val, bid_before_node, bid_after_node, bid_segment = compute_bid_set(tour, inserted_sets, best_pos, member, dist)
 
         push!(bid_sets, bid_set)
         push!(bid_vals, bid_val)

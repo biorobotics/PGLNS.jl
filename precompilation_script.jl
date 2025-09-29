@@ -16,22 +16,48 @@
 
 using Sockets
 import Pkg
-Pkg.activate(expanduser("~/PGLNS.jl"))
+Pkg.activate(expanduser("."))
 import GLNS
 using Printf
 using NPZ
 using PythonCall
+import Random
 include("src/utilities.jl")
 include("src/parse_print.jl")
 include("src/tour_optimizations.jl")
 include("src/adaptive_powers.jl")
 include("src/insertion_deletion.jl")
-include("src/parse_print.jl")
+include("src/parameter_defaults.jl")
 
 function main()
   # Should be in the /home/cobra/GLKH-1.1/GTSPLIB folder
   instance_folder = "debug"
 
+  # Ensure the auction functions get compiled
+  param = GLNS.parameter_settings_auction("fast")
+  powers = GLNS.initialize_powers(param)
+
+  tmp_rng = Random.Xoshiro(4223100027)
+
+  tour = PyArray{Int64, 1, true, true, Int64}([1, 2])
+  dist = PyArray{Int64, 2, true, true, Int64}(Matrix([0 1; 1 0]))
+  member = PyArray{Int64, 1, true, true, Int64}([1, 2])
+  GLNS.auctioneer_remove(tour, dist, member, powers, "early", 1, 1, tmp_rng)
+
+  setdist = GLNS.set_vertex_dist(dist, length(tour), member)
+  sets = [[1], [2]]
+  tour = [1]
+  sets_to_insert = [2]
+  bid_sets, bid_vals, bid_before_nodes, bid_after_nodes, bid_segments = GLNS.compute_bids(tour, dist, member,
+                                                                                          setdist, sets, sets_to_insert,
+                                                                                          powers, "early", tmp_rng)
+
+  # cheapest_insertion
+  tour = [1]
+  sets_to_insert = [2]
+  GLNS.cheapest_insertion_get_bids!(tour, sets_to_insert, dist, setdist, sets, member)
+
+  # Regular PGLNS compilation
   for i=1:2
     ARGS = [expanduser("~/GLKH-1.1/GTSPLIB/"*instance_folder*"/custom"*string(i)*".gtsp"), "-output=custom.tour", "-socket_port=65432", "-new_socket_each_instance=0", "-verbose=3", "-mode=fast", "-num_iterations=60", "-latest_improvement=15", "-first_improvement=10", "-max_removal_fraction=0.1", "-max_removals_cap=20"]
 
@@ -55,9 +81,11 @@ function main()
     end
     @time GLNS.main(ARGS, 10., inf_val, given_initial_tours, dist, 10, pin_cores)
     @time GLNS.main(PyList{Any}(ARGS), 10., inf_val, PyArray{Int64, 1, true, true, Int64}(given_initial_tours), PyArray{Int64, 2, true, true, Int64}(dist), 10, pin_cores)
+    #=
     if i == 1
       @time GLNS.main(PyList{Any}(ARGS), 10., inf_val, PyArray{Int64, 1, true, true, Int64}(given_initial_tours), PyArray{Int64, 2, true, true, Int64}(dist), 10, pin_cores, true, "perf.txt")
     end
+    =#
   end
 end
 
