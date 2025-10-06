@@ -73,7 +73,7 @@ function parameter_settings(num_vertices, num_sets, sets, problem_instance, args
 		:latest_improvement => latest_improvement,
 		:first_improvement => first_improvement,
 		:max_removals => min(num_sets - 1, max_removals_cap, max(round(Int64, max_removal_fraction*num_sets), 1)),
-		:insertions => ["randpdf"],
+		:insertions => ["randpdf", "cheapest_bfs"],
 		)
 	
 	################## attempt slow search  ##########################

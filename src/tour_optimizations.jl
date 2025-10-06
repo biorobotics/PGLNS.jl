@@ -198,7 +198,7 @@ end
 
 
 """
-relaxes the cost of each vertex in the set set2 in-place.
+relaxes the cost of each vertex in the set set2 in-place, assuming set2 comes after set1.
 """
 @inline function relax_in!(cost::Array{Int64, 1}, dist, prev::Array{Int64, 1}, 
 				 set1::Array{Int64, 1}, set2::Array{Int64, 1})
@@ -206,12 +206,31 @@ relaxes the cost of each vertex in the set set2 in-place.
 		v1 = set1[1]
 		cost[v2] = cost[v1] + dist[v1, v2]
 		prev[v2] = v1
-        for i = 2:length(set1)
+    for i = 2:length(set1)
 			v1 = set1[i]
 			newcost = cost[v1] + dist[v1, v2]
-            if cost[v2] > newcost
+      if cost[v2] > newcost
 				cost[v2], prev[v2] = newcost, v1
-            end
-        end
+      end
     end
+  end
+end
+
+"""
+relaxes the cost of each vertex in the set set2 in-place, assuming set2 comes before set1.
+"""
+@inline function relax_out!(cost::Array{Int64, 1}, dist, next::Array{Int64, 1}, 
+				 set1::Array{Int64, 1}, set2::Array{Int64, 1})
+	@inbounds for v2 in set2
+		v1 = set1[1]
+		cost[v2] = dist[v2, v1] + cost[v1]
+		next[v2] = v1
+    for i = 2:length(set1)
+			v1 = set1[i]
+			newcost = dist[v2, v1] + cost[v1]
+      if cost[v2] > newcost
+				cost[v2], next[v2] = newcost, v1
+      end
+    end
+  end
 end

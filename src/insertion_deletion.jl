@@ -82,6 +82,17 @@ function remove_insert(current::Tour, dist, member,
 	# then perform insertion
 	if insertion.name == "cheapest"
 		cheapest_insertion!(trial.tour, sets_to_insert, dist, setdist, sets_unshuffled)
+	elseif insertion.name == "cheapest_bfs"
+		bfs_insertion!(trial.tour, sets_to_insert, dist, setdist, sets_unshuffled, member, param, thread_idx)
+    #=
+    visited_sets = zeros(Bool,length(sets))
+    for node_idx in trial.tour
+      visited_sets[member[node_idx]] = true
+    end
+    if !all(visited_sets)
+      throw("Not all sets visited")
+    end
+    =#
 	else
 		randpdf_insertion!(trial.tour, sets_to_insert, dist, setdist, sets, sets_unshuffled,
 							insertion.value, noise, set_locks, lock_times, thread_idx)
@@ -213,6 +224,147 @@ function randpdf_insertion!(tour::Array{Int64,1}, sets_to_insert::Array{Int64,1}
     end
 end
 
+
+function bfs_insertion!(tour::Array{Int64,1}, sets_to_insert::Array{Int64,1},
+	dist, setdist::Distsv, sets::Vector{Vector{Int64}}, member, param, thread_idx)
+
+	min_index = min_setv(tour, sets, member, param)	
+  tour[:] = [tour[min_index:end]; tour[1:min_index-1]]
+
+  # cost_to_come to the start vertex from all other vertices in sets in the tour currently
+  prev = zeros(Int64, param[:num_vertices])   
+  cost_to_come = zeros(Int64, param[:num_vertices])
+  @inbounds for start_vertex in sets[member[tour[1]]]
+    prev[start_vertex] = start_vertex
+    if length(tour) != 1
+      relax_in!(cost_to_come, dist, prev, Int64[start_vertex], sets[member[tour[2]]])
+      for i = 3:length(tour)  # cost to get to ith set on path through (i-1)th set
+          relax_in!(cost_to_come, dist, prev, sets[member[tour[i-1]]], sets[member[tour[i]]])
+      end
+      relax_in!(cost_to_come, dist, prev, sets[member[tour[end]]], Int64[start_vertex])
+    end
+  end
+
+  # cost_to_go to the start vertex from all other vertices in sets in the tour currently
+  next = zeros(Int64, param[:num_vertices])   # initialize cost_to_go
+  cost_to_go = zeros(Int64, param[:num_vertices])
+  @inbounds for start_vertex in sets[member[tour[1]]]
+    next[start_vertex] = start_vertex
+    if length(tour) != 1
+      relax_out!(cost_to_go, dist, next, Int64[start_vertex], sets[member[tour[end]]])
+      for i = length(tour) - 1:-1:2  # cost to go through (i + 1)th set after ith set
+          relax_out!(cost_to_go, dist, next, sets[member[tour[i+1]]], sets[member[tour[i]]])
+      end
+      relax_out!(cost_to_go, dist, next, sets[member[tour[2]]], Int64[start_vertex])
+    end
+  end
+
+	while length(sets_to_insert) > 0
+      best_cost = typemax(Int64)
+      best_v = 0
+      best_pos = 0
+      best_set = 0
+      best_v_before = 0
+      best_v_after = 0
+      for set_ind_within_sets_to_insert = 1:length(sets_to_insert)
+          set_ind = sets_to_insert[set_ind_within_sets_to_insert]
+          # find the best place to insert the vertex
+
+          for v in sets[set_ind]
+            for i=1:length(tour)
+              v_before = i == 1 ? tour[end] : tour[i - 1]
+              set_before = sets[member[v_before]]
+              v_after = tour[i]
+              set_after = sets[member[v_after]]
+
+              min_cost_before = typemax(Int64)
+              best_v_before_local = 0
+              for v_before in set_before
+                cost_before = cost_to_come[v_before] + dist[v_before, v]
+                if cost_before < min_cost_before
+                  min_cost_before = cost_before
+                  best_v_before_local = v_before
+                end
+              end
+
+              min_cost_after = typemax(Int64)
+              best_v_after_local = 0
+              for v_after in set_after
+                cost_after = dist[v, v_after] + cost_to_go[v_after]
+                if cost_after < min_cost_after
+                  min_cost_after = cost_after
+                  best_v_after_local = v_after
+                end
+              end
+
+              cost = min_cost_before + min_cost_after
+              if cost < best_cost
+                best_cost = cost
+                best_v = v
+                best_pos = i
+                best_set = set_ind_within_sets_to_insert
+                best_v_before = best_v_before_local
+                best_v_after = best_v_after_local
+              end
+            end
+          end
+      end
+
+      if best_v == 0
+        throw("best_v == 0")
+      end
+
+      # now, perform the insertion
+      insert!(tour, best_pos, best_v)
+      # remove the inserted set from data structures
+      splice!(sets_to_insert, best_set)
+
+      # Adjust the tour before
+      if best_pos != 1
+        v_before = best_v_before
+        for i = best_pos - 1:-1:1
+          tour[i] = v_before
+          v_before = prev[v_before]
+        end
+      end
+
+      # Adjust the tour after
+      if best_pos != length(tour)
+        v_after = best_v_after
+        for i = best_pos + 1:length(tour)
+          tour[i] = v_after
+          v_after = next[v_after]
+        end
+      end
+
+      if length(sets_to_insert) == 0
+        break
+      end
+
+      min_index = min_setv(tour, sets, member, param)	
+      tour[:] = [tour[min_index:end]; tour[1:min_index-1]]
+
+      # Adjust cost-to-come
+      @inbounds for start_vertex in sets[member[tour[1]]]
+        cost_to_come[start_vertex] = 0
+        relax_in!(cost_to_come, dist, prev, Int64[start_vertex], sets[member[tour[2]]])
+        for i = 3:length(tour)  # cost to get to ith set on path through (i-1)th set
+            relax_in!(cost_to_come, dist, prev, sets[member[tour[i-1]]], sets[member[tour[i]]])
+        end
+        relax_in!(cost_to_come, dist, prev, sets[member[tour[end]]], Int64[start_vertex])
+      end
+
+      # Adjust cost-to-go
+      @inbounds for start_vertex in sets[member[tour[1]]]
+        cost_to_go[start_vertex] = 0
+        relax_out!(cost_to_go, dist, next, Int64[start_vertex], sets[member[tour[end]]])
+        for i = length(tour) - 1:-1:2  # cost to go through (i + 1)th set after ith set
+            relax_out!(cost_to_go, dist, next, sets[member[tour[i+1]]], sets[member[tour[i]]])
+        end
+        relax_out!(cost_to_go, dist, next, sets[member[tour[2]]], Int64[start_vertex])
+      end
+  end
+end
 
 function cheapest_insertion!(tour::Array{Int64,1}, sets_to_insert::Array{Int64,1},
 	dist, setdist::Distsv, sets::Vector{Vector{Int64}})
