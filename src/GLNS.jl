@@ -350,6 +350,21 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
                 if param[:output_file] != "None"
                   push!(tour_history, (round((time_ns() - start_time_for_tour_history)/1.0e9, digits=3), best.tour, best.cost))
                 end
+
+                if stop_at_first_improvement_with_unevaluated_edges
+                  for (node_idx1, node_idx2) in zip(best.tour[1:end-1], best.tour[2:end])
+                    if !evaluated_edge_mat[node_idx1, node_idx2]
+                      unevaluated_edge = true
+                      break
+                    end
+                  end
+
+                  node_idx1 = best.tour[end]
+                  node_idx2 = best.tour[1]
+                  if !evaluated_edge_mat[node_idx1, node_idx2]
+                    unevaluated_edge = true
+                  end
+                end
               end
               budget_met = best.cost <= param[:budget]
             finally
@@ -357,6 +372,10 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
             end
 
             if budget_met
+              continue
+            end
+
+            if unevaluated_edge
               continue
             end
 
