@@ -40,6 +40,8 @@ function main()
     read_start_time = time_ns()
     npyfile = first(problem_instance, length(problem_instance) - length(".gtsp")) * ".npy"
     dist = npzread(npyfile)
+    evaluated_edge_mat = zeros(Bool, 0, 0)
+    stop_at_first_improvement_with_unevaluated_edges = false
     read_end_time = time_ns()
     cost_mat_read_time = (read_end_time - read_start_time)/1.0e9
 
@@ -50,14 +52,11 @@ function main()
     pin_cores = Vector{Int64}()
     if i == 1
       # Handle the case where no initial tour is passed
-      @time GLNS.main(cat(ARGS, ["-budget="*string(inf_val - 1)], dims=1), 10., inf_val, Vector{Int64}(), dist, 10, pin_cores)
-      @time GLNS.main(cat(ARGS, ["-init_tour=rand", "-budget="*string(inf_val - 1)], dims=1), 10., inf_val, Vector{Int64}(), dist, 10, pin_cores)
+      @time GLNS.main(cat(ARGS, ["-budget="*string(inf_val - 1)], dims=1), 10., inf_val, Vector{Int64}(), dist, evaluated_edge_mat, stop_at_first_improvement_with_unevaluated_edges, 10, pin_cores)
+      @time GLNS.main(cat(ARGS, ["-init_tour=rand", "-budget="*string(inf_val - 1)], dims=1), 10., inf_val, Vector{Int64}(), dist, evaluated_edge_mat, stop_at_first_improvement_with_unevaluated_edges, 10, pin_cores)
     end
-    @time GLNS.main(ARGS, 10., inf_val, given_initial_tours, dist, 10, pin_cores)
-    @time GLNS.main(PyList{Any}(ARGS), 10., inf_val, PyArray{Int64, 1, true, true, Int64}(given_initial_tours), PyArray{Int64, 2, true, true, Int64}(dist), 10, pin_cores)
-    if i == 1
-      @time GLNS.main(PyList{Any}(ARGS), 10., inf_val, PyArray{Int64, 1, true, true, Int64}(given_initial_tours), PyArray{Int64, 2, true, true, Int64}(dist), 10, pin_cores, true, "perf.txt")
-    end
+    @time GLNS.main(ARGS, 10., inf_val, given_initial_tours, dist, evaluated_edge_mat, stop_at_first_improvement_with_unevaluated_edges, 10, pin_cores)
+    @time GLNS.main(PyList{Any}(ARGS), 10., inf_val, PyArray{Int64, 1, true, true, Int64}(given_initial_tours), PyArray{Int64, 2, true, true, Int64}(dist), PyArray{Bool, 2, true, true, Bool}(evaluated_edge_mat), stop_at_first_improvement_with_unevaluated_edges, 10, pin_cores)
   end
 end
 

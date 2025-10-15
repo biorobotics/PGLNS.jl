@@ -29,7 +29,7 @@ include("adaptive_powers.jl")
 include("insertion_deletion.jl")
 include("parameter_defaults.jl")
 
-function solver(problem_instance::String, given_initial_tours::AbstractArray{Int64,1}, start_time_for_tour_history::UInt64, inf_val::Int64, num_vertices::Int64, num_sets::Int64, sets::Vector{Vector{Int64}}, dist::AbstractArray{Int64,2}, membership::Vector{Int64}, instance_read_time::Float64, cost_mat_read_time::Float64, max_threads::Int64, powers::Dict{String,Any}=Dict{String,Any}(), update_powers::Bool=true, pin_cores::Vector{Int64}=Vector{Int64}(); args...)
+function solver(problem_instance::String, given_initial_tours::AbstractArray{Int64,1}, start_time_for_tour_history::UInt64, inf_val::Int64, num_vertices::Int64, num_sets::Int64, sets::Vector{Vector{Int64}}, dist::AbstractArray{Int64,2}, evaluated_edge_mat::AbstractArray{Bool,2}, stop_at_first_improvement_with_unevaluated_edges::Bool, membership::Vector{Int64}, instance_read_time::Float64, cost_mat_read_time::Float64, max_threads::Int64, powers::Dict{String,Any}=Dict{String,Any}(), update_powers::Bool=true, pin_cores::Vector{Int64}=Vector{Int64}(); args...)
   Random.seed!(1234)
 
   nthreads = min(Threads.nthreads(), max_threads)
@@ -143,6 +143,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
         this_num_trials = 0
         # this_time_per_trial = Vector{Float64}()
         budget_met = false
+        unevaluated_edge = false
         while true
           bt_trial_time = time()
           do_break = false
@@ -151,7 +152,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
           at = time()
           lock_times[thread_idx] += at - bt
           try
-            if budget_met || thread_broke || 
+            if budget_met || unevaluated_edge || thread_broke || 
                (count[:latest_improvement] > (count[:first_improvement] ?
                                               param[:latest_improvement] : param[:first_improvement]))
               thread_broke = true
@@ -280,6 +281,21 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
               if param[:print_output] == 3
                 println("Thread ", thread_idx, " found new best tour after ", timer, " s with cost ", best.cost, " (before opt cycle)")
               end
+
+              if stop_at_first_improvement_with_unevaluated_edges
+                for (node_idx1, node_idx2) in zip(best.tour[1:end-1], best.tour[2:end])
+                  if !evaluated_edge_mat[node_idx1, node_idx2]
+                    unevaluated_edge = true
+                    break
+                  end
+                end
+
+                node_idx1 = best.tour[end]
+                node_idx2 = best.tour[1]
+                if !evaluated_edge_mat[node_idx1, node_idx2]
+                  unevaluated_edge = true
+                end
+              end
             end
 
             budget_met = best.cost <= param[:budget]
@@ -288,6 +304,10 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
           end
 
           if budget_met
+            continue
+          end
+
+          if unevaluated_edge
             continue
           end
 
@@ -489,7 +509,7 @@ function parse_cmd(ARGS)
 	return filename, optional_args
 end
 
-function main(args, max_time::Float64, inf_val::Int64, given_initial_tours::AbstractArray{Int64,1}, dist::AbstractArray{Int64,2}, max_threads::Int64, pin_cores::Vector{Int64}=Vector{Int64}(), do_perf::Bool=false, perf_file::String="")
+function main(args, max_time::Float64, inf_val::Int64, given_initial_tours::AbstractArray{Int64,1}, dist::AbstractArray{Int64,2}, evaluated_edge_mat::AbstractArray{Bool,2}, stop_at_first_improvement_with_unevaluated_edges::Bool, max_threads::Int64, pin_cores::Vector{Int64}=Vector{Int64}())
   start_time_for_tour_history = time_ns()
   problem_instance, optional_args = parse_cmd(args)
   problem_instance = String(problem_instance)
@@ -526,40 +546,7 @@ function main(args, max_time::Float64, inf_val::Int64, given_initial_tours::Abst
     num_vertices += 1
   end
 
-  # Perf code
-  perf_pid = -1
-  if do_perf
-    @assert(length(perf_file) != 0)
-    pid = string(getpid())
-    # timestr = string(time())
-    # Assumes we're just storing in the local directory so there aren't any slashes in the output file name. Also assumes perf_data has been created
-    num = 0
-    # cmd = `perf stat -p $pid -M tma_dram_bound,tma_l1_bound,tma_l2_bound,tma_l3_bound -e cache-references,cache-misses,L1-dcache-load-misses,L1-dcache-loads,L1-dcache-stores,L1-icache-load-misses,l2_rqsts.miss,l2_rqsts.references,LLC-loads,LLC-load-misses,LLC-stores,LLC-store-misses -o $perf_file`
-    # cmd = `perf stat -p $pid -M tma_dram_bound,tma_l1_bound,tma_l2_bound,tma_l3_bound -e cache-references,cache-misses,L1-dcache-load-misses,L1-dcache-loads,L1-dcache-stores,L1-icache-load-misses,l2_rqsts.miss,l2_rqsts.references,LLC-loads,LLC-load-misses,LLC-stores,LLC-store-misses,offcore_response.pf_l1d_and_sw.l3_hit.any_snoop -o $perf_file`
-    # cmd = `perf stat -p $pid -M tma_dram_bound,tma_l1_bound,tma_l2_bound,tma_l3_bound -e L1-dcache-load-misses,L1-dcache-loads,l2_rqsts.all_demand_data_rd,l2_rqsts.demand_data_rd_miss,LLC-loads,LLC-load-misses -o $perf_file`
-    # cmd = `perf stat -p $pid -M tma_l1_bound -o $perf_file`
-    # cmd = `perf stat -p $pid -M tma_dram_bound,tma_l1_bound,tma_l2_bound,tma_l3_bound -o $perf_file`
-    # cmd = `perf stat -p $pid -M tma_l1_bound -e L1-dcache-load-misses,L1-dcache-loads -o $perf_file`
-    # cmd = `perf stat -p $pid -e L1-dcache-load-misses,L1-dcache-loads,offcore_response.pf_l1d_and_sw.l3_hit.any_snoop,offcore_response.pf_l1d_and_sw.l3_miss.any_snoop -o $perf_file`
-    cmd = `perf stat -p $pid -M tma_l1_bound,tma_l2_bound,tma_l3_bound,tma_dram_bound -e LLC-loads,LLC-load-misses -o $perf_file`
-    # cmd = `perf stat -p $pid -M tma_dram_bound -o $perf_file`
-    perf_proc = run(pipeline(cmd, stdout=stdout, stderr=stdout); wait=false)
-    perf_pid = getpid(perf_proc)
-    # sleep(1)
-    # sleep(1)
-  end
-  min_elapsed_time = do_perf ? 0.2 : 0.
-  bt_for_perf = time_ns()
-  timing_result = @timed GLNS.solver(problem_instance, given_initial_tours, start_time_for_tour_history, inf_val, num_vertices, num_sets, sets, dist, membership, instance_read_time, cost_mat_read_time, max_threads, powers, update_powers, pin_cores; optional_args...)
-  at_for_perf = time_ns()
-  while (at_for_perf - bt_for_perf)/1.0e9 < min_elapsed_time
-    timing_result = @timed GLNS.solver(problem_instance, given_initial_tours, start_time_for_tour_history, inf_val, num_vertices, num_sets, sets, dist, membership, instance_read_time, cost_mat_read_time, max_threads, powers, update_powers, pin_cores; optional_args...)
-    at_for_perf = time_ns()
-  end
-  if do_perf
-    @assert(perf_pid != -1)
-    run(`kill -2 $perf_pid`)
-  end
+  timing_result = @timed GLNS.solver(problem_instance, given_initial_tours, start_time_for_tour_history, inf_val, num_vertices, num_sets, sets, dist, evaluated_edge_mat, stop_at_first_improvement_with_unevaluated_edges, membership, instance_read_time, cost_mat_read_time, max_threads, powers, update_powers, pin_cores; optional_args...)
   if get(optional_args, :verbose, 0) == 3
     println("Compile time: ", timing_result.compile_time)
   end
