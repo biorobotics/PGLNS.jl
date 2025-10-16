@@ -59,15 +59,23 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
 
 	start_time = time_ns()
   start_proc_time = CPUtime_us()
+  
+  bt = time_ns()
 	# compute set distances which will be helpful
 	setdist = set_vertex_dist(dist, num_sets, membership)
+  at = time_ns()
+  setdist_time = (at - bt)/1e9
+
   if length(powers) == 0
     powers = initialize_powers(param)
   elseif update_powers
     power_update!(powers, param)
   end
   
+  bt = time_ns()
   sets_unshuffled = deepcopy(sets)
+  at = time_ns()
+  sets_deepcopy_time = (at - bt)/1e9
   # sets_unshuffled = sets # Need to use this to match GLNS
 
   tour_history = Array{Tuple{Float64, Array{Int64,1}, Int64},1}()
@@ -464,7 +472,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
 
   proc_timer = (CPUtime_us() - start_proc_time)/1e6
   # print_summary(lowest, timer, proc_timer, membership, param, tour_history, cost_mat_read_time, instance_read_time, num_trials_feasible, num_trials, param[:timeout], lock_times, time_spent_waiting_for_termination, time_per_trial)
-  print_summary(lowest, timer, proc_timer, membership, param, tour_history, cost_mat_read_time, instance_read_time, num_trials_feasible, num_trials, param[:timeout], lock_times, time_spent_waiting_for_termination)
+  print_summary(lowest, timer, proc_timer, membership, param, tour_history, cost_mat_read_time, instance_read_time, num_trials_feasible, num_trials, param[:timeout], lock_times, time_spent_waiting_for_termination, setdist_time, sets_deepcopy_time)
 
   @assert(lowest.cost == tour_cost(lowest.tour, dist))
   @assert(length(lowest.tour) == num_sets)
