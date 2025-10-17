@@ -1,53 +1,72 @@
-# Copyright 2017 Stephen L. Smith and Frank Imeson
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-module GLNS
-export solver
-using Random
-using Sockets
-using Printf
-using NPZ
-using CPUTime
-using Polyester: @batch
-using Base.Threads
-using ThreadPinning
-import Future
-include("utilities.jl")
-include("parse_print.jl")
-include("tour_optimizations.jl")
-include("adaptive_powers.jl")
-include("insertion_deletion.jl")
-include("parameter_defaults.jl")
-include("solver_state.jl")
 
-function solver(problem_instance::String, given_initial_tours::AbstractArray{Int64,1}, start_time_for_tour_history::UInt64, inf_val::Int64, num_vertices::Int64, num_sets::Int64, sets::Vector{Vector{Int64}}, dist::AbstractArray{Int64,2}, evaluated_edge_mat::AbstractArray{Bool,2}, stop_at_first_improvement_with_unevaluated_edges::Bool, membership::Vector{Int64}, instance_read_time::Float64, cost_mat_read_time::Float64, max_threads::Int64, powers::Dict{String,Any}=Dict{String,Any}(), update_powers::Bool=true, pin_cores::Vector{Int64}=Vector{Int64}(); args...)
-  Random.seed!(1234)
+# Is it worth including the phase and temperature in here?
+mutable struct SolverState
+  inf_val::Int64
+  num_vertices::Int64
+  num_sets::Int64
+  sets::Vector{Vector{Int64}}
+  dist::AbstractArray{Int64,2}
+  evaluated_edge_mat::AbstractArray{Bool,2}
+  stop_at_first_improvement_with_unevaluated_edges::Bool
+  membership::Vector{Int64}
+  instance_read_time::Float64
+  cost_mat_read_time::Float64
+  max_threads::Int64
+  powers::Dict{String,Any}
+  update_powers::Bool
+  pin_cores::Vector{Int64}
 
-  nthreads = min(Threads.nthreads(), max_threads)
-  if nthreads != 1
-    if length(pin_cores) != 0
-      pinthreads(pin_cores)
-    else
-      pinthreads(:cores)
-    end
+  setdist_time::Float64
+  sets_deepcopy_time::Float64
+
+  param
+  count
+  setdist::Distsv
+  sets_unshuffled::Vector{Vector{Int64}}
+end
+
+function initialize_solver_state(args, inf_val::Int64, given_initial_tours::AbstractArray{Int64,1}, dist::AbstractArray{Int64,2}, evaluated_edge_mat::AbstractArray{Bool,2}, stop_at_first_improvement_with_unevaluated_edges::Bool, max_threads::Int64, pin_cores::Vector{Int64}=Vector{Int64}())
+  problem_instance, optional_args = parse_cmd(args)
+  problem_instance = String(problem_instance)
+
+  read_start_time = time_ns()
+  num_vertices, num_sets, sets, tmp_dist, membership = read_file(problem_instance, size(dist, 1) == 0)
+  read_end_time = time_ns()
+  instance_read_time = (read_end_time - read_start_time)/1.0e9
+  if get(optional_args, :verbose, 0) == 3
+    println("Reading GTSPLIB file took ", instance_read_time, " s")
   end
+
+  cost_mat_read_time = 0.
+
+  powers = Dict{String, Any}()
+  update_powers = false
+
+  if size(dist, 1) == 0
+    dist = tmp_dist
+  end
+
+  if length(sets[membership[1]]) != 1
+    for set_idx=1:length(sets)
+      sets[set_idx] .+= 1
+    end
+    pushfirst!(sets, [1])
+    membership = vcat(1, membership .+ 1)
+    dist = hcat(zeros(Int64, length(membership)), vcat(0, dist))
+    num_sets += 1
+    num_vertices += 1
+  end
+
+  args = optional_args
+
+  # Random.seed!(1234)
 
 	param = parameter_settings(num_vertices, num_sets, sets, problem_instance, args)
   if length(given_initial_tours) != 0
     @assert(length(given_initial_tours)%num_sets == 0)
     param[:cold_trials] = div(length(given_initial_tours), num_sets)
   end
-	#####################################################
+
 	init_time = time()
 
 	count = Dict(:latest_improvement => 1,
@@ -55,12 +74,8 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
 	 		     :warm_trial => 0,
 	  		     :cold_trial => 1,
 				 :total_iter => 0,
-				 :print_time => init_time)
-	lowest = Tour(Int64[], typemax(Int64))
+         :print_time => init_time)
 
-	start_time = time_ns()
-  start_proc_time = CPUtime_us()
-  
   bt = time_ns()
 	# compute set distances which will be helpful
 	setdist = set_vertex_dist(dist, num_sets, membership)
@@ -72,13 +87,179 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
   elseif update_powers
     power_update!(powers, param)
   end
-  
+
   bt = time_ns()
   sets_unshuffled = deepcopy(sets)
   at = time_ns()
   sets_deepcopy_time = (at - bt)/1e9
   # sets_unshuffled = sets # Need to use this to match GLNS
 
+  solver_state = SolverState(inf_val,
+                             num_vertices,
+                             num_sets,
+                             sets,
+                             dist,
+                             evaluated_edge_mat, 
+                             stop_at_first_improvement_with_unevaluated_edges,
+                             membership,
+                             instance_read_time,
+                             cost_mat_read_time,
+                             max_threads,
+                             powers,
+                             update_powers,
+                             pin_cores,
+                             setdist_time,
+                             sets_deepcopy_time,
+                             param,
+                             count,
+                             setdist,
+                             sets_unshuffled)
+end
+
+function solve_with_state!(solver_state::SolverState, new_time_limit::Float64, updated_edges::AbstractArray{Int64,2}, given_initial_tours::AbstractArray{Int64,1})
+  start_time_for_tour_history = time_ns()
+
+  Random.seed!(1234)
+
+  inf_val = solver_state.inf_val
+  num_vertices = solver_state.num_vertices
+  num_sets = solver_state.num_sets
+  sets = solver_state.sets
+  # sets = deepcopy(solver_state.sets_unshuffled) # If we want to reproduce the behavior of the version that doesn't use a solver state, we need to use this line instead of the above. From the profiling I did on 10/16/2025, deepcopying the sets isn't expensive, but I didn't see a point in doing it
+  dist = solver_state.dist
+  evaluated_edge_mat = solver_state.evaluated_edge_mat
+  stop_at_first_improvement_with_unevaluated_edges = solver_state.stop_at_first_improvement_with_unevaluated_edges
+  membership = solver_state.membership
+  max_threads = solver_state.max_threads
+  powers = solver_state.powers
+  update_powers = solver_state.update_powers
+  pin_cores = solver_state.pin_cores
+  param = solver_state.param
+  count = solver_state.count
+  setdist = solver_state.setdist
+  sets_unshuffled = solver_state.sets_unshuffled
+
+  nthreads = min(Threads.nthreads(), max_threads)
+  if nthreads != 1
+    if length(pin_cores) != 0
+      pinthreads(pin_cores)
+    else
+      pinthreads(:cores)
+    end
+  end
+
+  param[:max_time] = new_time_limit
+
+	#####################################################
+	init_time = time()
+
+  # Note: there may be some value in not resetting all these counters after each edge evaluation step. Haven't explored
+	count[:latest_improvement] = 1
+	count[:first_improvement] = false
+	count[:warm_trial] = 0
+	count[:cold_trial] = 1
+	count[:total_iter] = 0
+  count[:print_time] = init_time
+
+	lowest = Tour(Int64[], typemax(Int64))
+
+	start_time = time_ns()
+  start_proc_time = CPUtime_us()
+
+  # Assumes that edge costs only increase
+  bt = time_ns()
+  for edge_idx in 1:size(updated_edges, 1)
+    node_idx1 = updated_edges[edge_idx, 1]
+    node_idx2 = updated_edges[edge_idx, 2]
+    prev_cost = updated_edges[edge_idx, 3]
+    if dist[node_idx1, node_idx2] < prev_cost
+      println("Edge: ", node_idx1, " ", node_idx2)
+      println("Original cost: ", prev_cost)
+      println("Updated cost: ", dist[node_idx1, node_idx2])
+      throw("Error: updated edge cost is smaller than original cost")
+    end
+
+    set1 = membership[node_idx1]
+    set2 = membership[node_idx2]
+
+    if setdist.set_vert[set1, node_idx2] == prev_cost
+      setdist.set_vert[set1, node_idx2] = typemax(Int64)
+      for i in sets[set1]
+        if dist[i, node_idx2] < setdist.set_vert[set1, node_idx2]
+          setdist.set_vert[set1, node_idx2] = dist[i, node_idx2]
+        end
+      end
+    end
+
+    if setdist.min_sv[set1, node_idx2] == prev_cost
+      setdist.min_sv[set1, node_idx2] = typemax(Int64)
+      for i in sets[set1]
+        if dist[i, node_idx2] < setdist.min_sv[set1, node_idx2]
+          setdist.min_sv[set1, node_idx2] = dist[i, node_idx2]
+        end
+        if dist[node_idx2, i] < setdist.min_sv[set1, node_idx2]
+          setdist.min_sv[set1, node_idx2] = dist[node_idx2, i]
+        end
+      end
+    end
+
+    if setdist.vert_set[node_idx2, set1] == prev_cost
+      setdist.vert_set[node_idx2, set1] = typemax(Int64)
+      for i in sets[set1]
+        if dist[node_idx2, i] < setdist.vert_set[node_idx2, set1]
+          setdist.vert_set[node_idx2, set1] = dist[node_idx2, i]
+        end
+      end
+    end
+
+    if setdist.set_vert[set2, node_idx1] == prev_cost
+      setdist.set_vert[set2, node_idx1] = typemax(Int64)
+      for j in sets[set2]
+        if dist[j, node_idx1] < setdist.set_vert[set2, node_idx1]
+          setdist.set_vert[set2, node_idx1] = dist[j, node_idx1]
+        end
+      end
+    end
+
+    if setdist.min_sv[set2, node_idx1] == prev_cost
+      setdist.min_sv[set2, node_idx1] = typemax(Int64)
+      for j in sets[set2]
+        if dist[j, node_idx1] < setdist.min_sv[set2, node_idx1]
+          setdist.min_sv[set2, node_idx1] = dist[j, node_idx1]
+        end
+        if dist[node_idx1, j] < setdist.min_sv[set2, node_idx1]
+          setdist.min_sv[set2, node_idx1] = dist[node_idx1, j]
+        end
+      end
+    end
+
+    if setdist.vert_set[node_idx1, set2] == prev_cost
+      setdist.vert_set[node_idx1, set2] = typemax(Int64)
+      for j in sets[set2]
+        if dist[node_idx1, j] < setdist.vert_set[node_idx1, set2]
+          setdist.vert_set[node_idx1, set2] = dist[node_idx1, j]
+        end
+      end
+    end
+  end
+  at = time_ns()
+  update_setdist_time = at - bt
+  #=
+  setdist_from_scratch = set_vertex_dist(dist, num_sets, membership)
+  if !all(setdist_from_scratch.set_vert .== setdist.set_vert)
+    throw("Error: setdist from scratch does not match incremental setdist for set_vert")
+  end
+
+  if !all(setdist_from_scratch.vert_set .== setdist.vert_set)
+    throw("Error: setdist from scratch does not match incremental setdist for vert_set")
+  end
+
+  if !all(setdist_from_scratch.min_sv .== setdist.min_sv)
+    throw("Error: setdist from scratch does not match incremental setdist for min_sv")
+  end
+  =#
+
+  
   tour_history = Array{Tuple{Float64, Array{Int64,1}, Int64},1}()
   num_trials_feasible = 0
   num_trials = 0
@@ -131,6 +312,8 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
       power_update!(powers, param)
     end
 
+    unevaluated_edge_in_this_cold_trial = false
+
     while count[:warm_trial] <= param[:warm_trials]
       best_update_time = time_ns()
       iter_count = 1
@@ -161,6 +344,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
           at = time()
           lock_times[thread_idx] += at - bt
           try
+            unevaluated_edge_in_this_cold_trial = unevaluated_edge
             if budget_met || unevaluated_edge || thread_broke || 
                (count[:latest_improvement] > (count[:first_improvement] ?
                                               param[:latest_improvement] : param[:first_improvement]))
@@ -450,6 +634,11 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
       if param[:budget_met]
         break
       end
+
+      if unevaluated_edge_in_this_cold_trial
+        break
+      end
+
       time_spent_waiting_for_termination += (time_ns() - best_update_time)/1e9
       if time() - init_time > param[:max_time]
         param[:timeout] = true
@@ -462,6 +651,9 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
     if param[:budget_met]
       break
     end
+    if unevaluated_edge_in_this_cold_trial
+      break
+    end
     if time() - init_time > param[:max_time]
       break
     end
@@ -472,113 +664,12 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
   end
 
   proc_timer = (CPUtime_us() - start_proc_time)/1e6
-  # print_summary(lowest, timer, proc_timer, membership, param, tour_history, cost_mat_read_time, instance_read_time, num_trials_feasible, num_trials, param[:timeout], lock_times, time_spent_waiting_for_termination, time_per_trial)
-  print_summary(lowest, timer, proc_timer, membership, param, tour_history, cost_mat_read_time, instance_read_time, num_trials_feasible, num_trials, param[:timeout], lock_times, time_spent_waiting_for_termination, setdist_time, sets_deepcopy_time)
 
   @assert(lowest.cost == tour_cost(lowest.tour, dist))
   @assert(length(lowest.tour) == num_sets)
   if param[:print_output] == 3
     println(lock_times)
   end
-  return lowest.cost, powers
-end
 
-function parse_cmd(ARGS)
-	if isempty(ARGS)
-		println("no input instance given")
-		exit(0)
-	end
-	if ARGS[1] == "-help" || ARGS[1] == "--help"
-		println("Usage:  GTSPcmd.jl [filename] [optional flags]\n")
-		println("Optional flags (vales are give in square brackets) :\n")
-		println("-mode=[default, fast, slow]      (default is default)")
-		println("-max_time=[Int]                  (default set by mode)")
-		println("-trials=[Int]                    (default set by mode)")
-		println("-restarts=[Int]                  (default set by mode)")
-		println("-noise=[None, Both, Subset, Add] (default is Both)")
-		println("-num_iterations=[Float]          (default set by mode. Number multiplied by # of sets)")
-		println("-verbose=[0, 1, 2, 3]            (default is 3. 0 is no output, 3 is most.)")
-		println("-output=[filename]               (default is None)")
-		println("-epsilon=[Float in [0,1]]        (default is 0.5)")
-		println("-reopt=[Float in [0,1]]          (default is 1.0)")
-		println("-budget=[Int]                    (default has no budget)")
-		println("-socket_port=[Int]               (default is 65432)")
-		println("-new_socket_each_instance=[filename]    (default is 0)")
-		exit(0)
-	end
-	int_flags = ["-max_time", "-trials", "-restarts", "-verbose", "-budget", "-socket_port", "-new_socket_each_instance", "-max_removals_cap"]
-	float_flags = ["-epsilon", "-reopt", "-num_iterations", "-latest_improvement", "-first_improvement", "-max_removal_fraction"]
-	string_flags = ["-mode", "-output", "-noise", "-devel", "-init_tour"]
-	filename = ""
-	optional_args = Dict{Symbol, Any}()
-	for arg in ARGS
-		temp = split(arg, "=")
-		if length(temp) == 1 && filename == ""
-			filename = temp[1]
-		elseif length(temp) == 2
-			flag = temp[1]
-			value = temp[2]
-			if flag in int_flags
-				key = Symbol(flag[2:end])
-				optional_args[key] = parse(Int64, value)
-			elseif flag in float_flags
-				key = Symbol(flag[2:end])
-				optional_args[key] = parse(Float64, value)
-			elseif flag in string_flags
-				key = Symbol(flag[2:end])
-				optional_args[key] = value
-			else
-				println("WARNING: skipping unknown flag ", flag, " in command line arguments")
-			end
-		else
-			error("argument ", arg, " not in proper format")
-		end
-	end
-	return filename, optional_args
-end
-
-function main(args, max_time::Float64, inf_val::Int64, given_initial_tours::AbstractArray{Int64,1}, dist::AbstractArray{Int64,2}, evaluated_edge_mat::AbstractArray{Bool,2}, stop_at_first_improvement_with_unevaluated_edges::Bool, max_threads::Int64, pin_cores::Vector{Int64}=Vector{Int64}())
-  start_time_for_tour_history = time_ns()
-  problem_instance, optional_args = parse_cmd(args)
-  problem_instance = String(problem_instance)
-
-  if max_time >= 0
-    optional_args[Symbol("max_time")] = max_time
-  end
-
-  read_start_time = time_ns()
-  num_vertices, num_sets, sets, tmp_dist, membership = read_file(problem_instance, size(dist, 1) == 0)
-  read_end_time = time_ns()
-  instance_read_time = (read_end_time - read_start_time)/1.0e9
-  if get(optional_args, :verbose, 0) == 3
-    println("Reading GTSPLIB file took ", instance_read_time, " s")
-  end
-
-  cost_mat_read_time = 0.
-
-  powers = Dict{String, Any}()
-  update_powers = false
-
-  if size(dist, 1) == 0
-    dist = tmp_dist
-  end
-
-  if length(sets[membership[1]]) != 1
-    for set_idx=1:length(sets)
-      sets[set_idx] .+= 1
-    end
-    pushfirst!(sets, [1])
-    membership = vcat(1, membership .+ 1)
-    dist = hcat(zeros(Int64, length(membership)), vcat(0, dist))
-    num_sets += 1
-    num_vertices += 1
-  end
-
-  timing_result = @timed GLNS.solver(problem_instance, given_initial_tours, start_time_for_tour_history, inf_val, num_vertices, num_sets, sets, dist, evaluated_edge_mat, stop_at_first_improvement_with_unevaluated_edges, membership, instance_read_time, cost_mat_read_time, max_threads, powers, update_powers, pin_cores; optional_args...)
-  if get(optional_args, :verbose, 0) == 3
-    println("Compile time: ", timing_result.compile_time)
-  end
-  return timing_result.value
-end
-
+  return lowest.tour, timer, proc_timer, num_trials_feasible, num_trials, param[:timeout], lock_times, time_spent_waiting_for_termination, tour_history, update_setdist_time
 end

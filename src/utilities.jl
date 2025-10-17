@@ -80,7 +80,7 @@ function findmember(num_vertices::Int64, sets::Vector{Vector{Int64}})
 end
 
 
-struct Distsv
+mutable struct Distsv
 	set_vert::Array{Int64, 2}
 	vert_set::Array{Int64,2}
 	min_sv::Array{Int64, 2}
@@ -93,13 +93,13 @@ function set_vertex_dist(dist::AbstractArray{Int64, 2}, num_sets::Int, member::A
 	Also compute the minimum distance from a set to a vertex, ignoring direction
 	This is used in insertion to choose the next set.
 	"""
-    numv = size(dist, 1)
-    dist_set_vert = typemax(Int64) * ones(Int64, num_sets, numv)
+  numv = size(dist, 1)
+  dist_set_vert = typemax(Int64) * ones(Int64, num_sets, numv)
 	mindist = typemax(Int64) * ones(Int64, num_sets, numv)
 	dist_vert_set = typemax(Int64) * ones(Int64, numv, num_sets)
 
 	for i = 1:numv
-        for j = 1:numv
+    for j = 1:numv
 			set = member[j]
 			if dist[j,i] < dist_set_vert[set, i]
 				dist_set_vert[set, i] = dist[j,i]
@@ -116,7 +116,7 @@ function set_vertex_dist(dist::AbstractArray{Int64, 2}, num_sets::Int, member::A
 			end
 		end
 	end
-    return Distsv(dist_set_vert, dist_vert_set, mindist)
+  return Distsv(dist_set_vert, dist_vert_set, mindist)
 end
 
 
