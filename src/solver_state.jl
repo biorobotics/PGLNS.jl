@@ -288,6 +288,8 @@ function solve_with_state!(solver_state::SolverState, new_time_limit::Float64, u
 
   time_spent_waiting_for_termination = 0.
 
+  unevaluated_edge_in_this_cold_trial = false
+
 	while true
     if count[:cold_trial] > param[:cold_trials] && !stop_upon_budget
       break
@@ -344,12 +346,19 @@ function solve_with_state!(solver_state::SolverState, new_time_limit::Float64, u
           at = time()
           lock_times[thread_idx] += at - bt
           try
-            unevaluated_edge_in_this_cold_trial = unevaluated_edge
+            if unevaluated_edge
+              unevaluated_edge_in_this_cold_trial = true
+            end
             if budget_met || unevaluated_edge || thread_broke || 
                (count[:latest_improvement] > (count[:first_improvement] ?
                                               param[:latest_improvement] : param[:first_improvement]))
               thread_broke = true
               do_break = true
+
+              if (count[:latest_improvement] > (count[:first_improvement] ?
+                                              param[:latest_improvement] : param[:first_improvement])) && count[:warm_trial] == param[:warm_trials]
+                println("Reached termination criteria")
+              end
             end
           finally
             unlock(count_lock)
@@ -657,6 +666,8 @@ function solve_with_state!(solver_state::SolverState, new_time_limit::Float64, u
     if time() - init_time > param[:max_time]
       break
     end
+
+    println("Terminating not because of unevaluated edge")
 	end
 	timer = (time_ns() - start_time)/1.0e9
   if param[:output_file] != "None"
@@ -671,5 +682,5 @@ function solve_with_state!(solver_state::SolverState, new_time_limit::Float64, u
     println(lock_times)
   end
 
-  return lowest.tour, timer, proc_timer, num_trials_feasible, num_trials, param[:timeout], lock_times, time_spent_waiting_for_termination, tour_history, update_setdist_time
+  return lowest.tour, timer, proc_timer, num_trials_feasible, num_trials, param[:timeout], lock_times, time_spent_waiting_for_termination, tour_history, update_setdist_time, unevaluated_edge_in_this_cold_trial
 end
