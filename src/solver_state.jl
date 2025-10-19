@@ -23,6 +23,11 @@ mutable struct SolverState
   count
   setdist::Distsv
   sets_unshuffled::Vector{Vector{Int64}}
+
+  temperature::Float64
+  cooling_rate::Float64
+  iter_count::Int64
+  phase::Symbol
 end
 
 function initialize_solver_state(args, inf_val::Int64, given_initial_tours::AbstractArray{Int64,1}, dist::AbstractArray{Int64,2}, evaluated_edge_mat::AbstractArray{Bool,2}, stop_at_first_improvement_with_unevaluated_edges::Bool, max_threads::Int64, pin_cores::Vector{Int64}=Vector{Int64}())
@@ -113,10 +118,15 @@ function initialize_solver_state(args, inf_val::Int64, given_initial_tours::Abst
                              param,
                              count,
                              setdist,
-                             sets_unshuffled)
+                             sets_unshuffled,
+                             0.,
+                             0.,
+                             1,
+                             :early)
 end
 
-function solve_with_state!(solver_state::SolverState, new_time_limit::Float64, updated_edges::AbstractArray{Int64,2}, given_initial_tours::AbstractArray{Int64,1})
+# function solve_with_state!(solver_state::SolverState, new_time_limit::Float64, updated_edges::AbstractArray{Int64,2}, given_initial_tours::AbstractArray{Int64,1}, debug::Bool, evaluation_threshold::Int64, first_improvement_dist::AbstractArray{Int64,2})
+function solve_with_state!(solver_state::SolverState, new_time_limit::Float64, updated_edges::AbstractArray{Int64,2}, given_initial_tours::AbstractArray{Int64,1}, debug::Bool, evaluation_threshold::Int64, additional_reuse::Bool)
   start_time_for_tour_history = time_ns()
 
   Random.seed!(1234)
@@ -138,6 +148,10 @@ function solve_with_state!(solver_state::SolverState, new_time_limit::Float64, u
   count = solver_state.count
   setdist = solver_state.setdist
   sets_unshuffled = solver_state.sets_unshuffled
+  temperature = solver_state.temperature
+  cooling_rate = solver_state.cooling_rate
+  iter_count = solver_state.iter_count
+  phase = solver_state.phase
 
   nthreads = min(Threads.nthreads(), max_threads)
   if nthreads != 1
@@ -153,12 +167,13 @@ function solve_with_state!(solver_state::SolverState, new_time_limit::Float64, u
 	#####################################################
 	init_time = time()
 
-  # Note: there may be some value in not resetting all these counters after each edge evaluation step. Haven't explored
-	count[:latest_improvement] = 1
-	count[:first_improvement] = false
-	count[:warm_trial] = 0
-	count[:cold_trial] = 1
-	count[:total_iter] = 0
+  if !additional_reuse
+    count[:latest_improvement] = 1
+    count[:first_improvement] = false
+    count[:warm_trial] = 0
+    count[:cold_trial] = 1
+    count[:total_iter] = 0
+  end
   count[:print_time] = init_time
 
 	lowest = Tour(Int64[], typemax(Int64))
@@ -290,6 +305,8 @@ function solve_with_state!(solver_state::SolverState, new_time_limit::Float64, u
 
   unevaluated_edge_in_this_cold_trial = false
 
+  reused_params = false
+
 	while true
     if count[:cold_trial] > param[:cold_trials] && !stop_upon_budget
       break
@@ -308,7 +325,9 @@ function solve_with_state!(solver_state::SolverState, new_time_limit::Float64, u
     end
     timer = (time_ns() - start_time)/1.0e9
 		# print_cold_trial(count, param, best)
-		phase = :early
+    if additional_reuse && !reused_params
+      phase = :early
+    end
 
     if count[:cold_trial] > 1 && update_powers
       power_update!(powers, param)
@@ -318,17 +337,22 @@ function solve_with_state!(solver_state::SolverState, new_time_limit::Float64, u
 
     while count[:warm_trial] <= param[:warm_trials]
       best_update_time = time_ns()
-      iter_count = 1
       current = tour_copy(best)
-      temperature = 1.442 * param[:accept_percentage] * best.cost
-      # accept a solution with 50% higher cost with 0.05% change after num_iterations.
-      cooling_rate = ((0.0005 * lowest.cost)/(param[:accept_percentage] *
-                  current.cost))^(1/param[:num_iterations])
+      if additional_reuse && !reused_params
+        reused_params = true
+      else
+        temperature = 1.442 * param[:accept_percentage] * best.cost
+        # accept a solution with 50% higher cost with 0.05% change after num_iterations.
+        cooling_rate = ((0.0005 * lowest.cost)/(param[:accept_percentage] *
+                    current.cost))^(1/param[:num_iterations])
+        iter_count = 1
 
-      if count[:warm_trial] > 0	  # if warm restart, then use lower temperature
-        temperature *= cooling_rate^(param[:num_iterations]/2)
-        phase = :late
+        if count[:warm_trial] > 0	  # if warm restart, then use lower temperature
+          temperature *= cooling_rate^(param[:num_iterations]/2)
+          phase = :late
+        end
       end
+
       this_phase = phase
       thread_broke = false
       @threads for thread_idx=1:nthreads
@@ -392,6 +416,12 @@ function solve_with_state!(solver_state::SolverState, new_time_limit::Float64, u
             unlock(phase_lock)
           end
           trial = remove_insert(current, dist, membership, setdist, sets, sets_unshuffled, powers, param, this_phase, powers_lock, current_lock, set_locks, update_powers, lock_times, thread_idx)
+          #=
+          if debug
+            npzwrite("trial.npy", trial.tour)
+            throw("error")
+          end
+          =#
 
           trial_infeasible = dist[trial.tour[end], trial.tour[1]] == inf_val
           @inbounds for i in 1:length(trial.tour)-1
@@ -482,9 +512,19 @@ function solve_with_state!(solver_state::SolverState, new_time_limit::Float64, u
               timer = (time_ns() - start_time)/1.0e9
               if param[:print_output] == 3
                 println("Thread ", thread_idx, " found new best tour after ", timer, " s with cost ", best.cost, " (before opt cycle)")
+                #=
+                first_improvement_cost = 0
+                for (node_idx1, node_idx2) in zip(best.tour[1:end - 1], best.tour[2:end])
+                  first_improvement_cost += first_improvement_dist[node_idx1, node_idx2]
+                end
+                node_idx1 = best.tour[end]
+                node_idx2 = best.tour[1]
+                first_improvement_cost += first_improvement_dist[node_idx1, node_idx2]
+                println("Cost computed using first-improvement cost matrix: ", first_improvement_cost)
+                =#
               end
 
-              if stop_at_first_improvement_with_unevaluated_edges
+              if stop_at_first_improvement_with_unevaluated_edges && best.cost < evaluation_threshold
                 for (node_idx1, node_idx2) in zip(best.tour[1:end-1], best.tour[2:end])
                   if !evaluated_edge_mat[node_idx1, node_idx2]
                     unevaluated_edge = true
@@ -547,13 +587,23 @@ function solve_with_state!(solver_state::SolverState, new_time_limit::Float64, u
                 timer = (time_ns() - start_time)/1.0e9
                 if param[:print_output] == 3
                   println("Thread ", thread_idx, " found new best tour after ", timer, " s with cost ", best.cost)
+                  #=
+                  first_improvement_cost = 0
+                  for (node_idx1, node_idx2) in zip(best.tour[1:end - 1], best.tour[2:end])
+                    first_improvement_cost += first_improvement_dist[node_idx1, node_idx2]
+                  end
+                  node_idx1 = best.tour[end]
+                  node_idx2 = best.tour[1]
+                  first_improvement_cost += first_improvement_dist[node_idx1, node_idx2]
+                  println("Cost computed using first-improvement cost matrix: ", first_improvement_cost)
+                  =#
                 end
 
                 if param[:output_file] != "None"
                   push!(tour_history, (round((time_ns() - start_time_for_tour_history)/1.0e9, digits=3), best.tour, best.cost))
                 end
 
-                if stop_at_first_improvement_with_unevaluated_edges
+                if stop_at_first_improvement_with_unevaluated_edges && best.cost < evaluation_threshold
                   for (node_idx1, node_idx2) in zip(best.tour[1:end-1], best.tour[2:end])
                     if !evaluated_edge_mat[node_idx1, node_idx2]
                       unevaluated_edge = true
@@ -636,9 +686,6 @@ function solve_with_state!(solver_state::SolverState, new_time_limit::Float64, u
         end
       end
       print_warm_trial(count, param, best, iter_count)
-      count[:warm_trial] += 1
-      count[:latest_improvement] = 1
-      count[:first_improvement] = false
       param[:budget_met] = best.cost <= param[:budget]
       if param[:budget_met]
         break
@@ -653,10 +700,12 @@ function solve_with_state!(solver_state::SolverState, new_time_limit::Float64, u
         param[:timeout] = true
         break
       end
+
+      count[:warm_trial] += 1
+      count[:latest_improvement] = 1
+      count[:first_improvement] = false
     end
 		lowest.cost > best.cost && (lowest = best)
-		count[:warm_trial] = 0
-		count[:cold_trial] += 1
     if param[:budget_met]
       break
     end
@@ -666,6 +715,9 @@ function solve_with_state!(solver_state::SolverState, new_time_limit::Float64, u
     if time() - init_time > param[:max_time]
       break
     end
+
+		count[:warm_trial] = 0
+		count[:cold_trial] += 1
 
     println("Terminating not because of unevaluated edge")
 	end
@@ -681,6 +733,11 @@ function solve_with_state!(solver_state::SolverState, new_time_limit::Float64, u
   if param[:print_output] == 3
     println(lock_times)
   end
+
+  solver_state.temperature = temperature
+  solver_state.cooling_rate = cooling_rate
+  solver_state.iter_count = iter_count
+  solver_state.phase = phase
 
   return lowest.tour, timer, proc_timer, num_trials_feasible, num_trials, param[:timeout], lock_times, time_spent_waiting_for_termination, tour_history, update_setdist_time, unevaluated_edge_in_this_cold_trial
 end
