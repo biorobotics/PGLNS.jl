@@ -258,7 +258,7 @@ function solve_with_state!(solver_state::SolverState, new_time_limit::Float64, u
     end
   end
   at = time_ns()
-  update_setdist_time = at - bt
+  update_setdist_time = (at - bt)/1e9
   #=
   setdist_from_scratch = set_vertex_dist(dist, num_sets, membership)
   if !all(setdist_from_scratch.set_vert .== setdist.set_vert)
