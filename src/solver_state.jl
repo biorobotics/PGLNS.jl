@@ -218,24 +218,6 @@ function solve_with_state!(solver_state::SolverState, new_time_limit::Float64, u
       end
     end
 
-    if setdist.vert_set[node_idx2, set1] == prev_cost
-      setdist.vert_set[node_idx2, set1] = typemax(Int64)
-      for i in sets[set1]
-        if dist[node_idx2, i] < setdist.vert_set[node_idx2, set1]
-          setdist.vert_set[node_idx2, set1] = dist[node_idx2, i]
-        end
-      end
-    end
-
-    if setdist.set_vert[set2, node_idx1] == prev_cost
-      setdist.set_vert[set2, node_idx1] = typemax(Int64)
-      for j in sets[set2]
-        if dist[j, node_idx1] < setdist.set_vert[set2, node_idx1]
-          setdist.set_vert[set2, node_idx1] = dist[j, node_idx1]
-        end
-      end
-    end
-
     if setdist.min_sv[set2, node_idx1] == prev_cost
       setdist.min_sv[set2, node_idx1] = typemax(Int64)
       for j in sets[set2]
