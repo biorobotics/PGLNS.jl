@@ -59,7 +59,10 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
 
 	start_time = time_ns()
 	# compute set distances which will be helpful
+  # bt = time_ns()
 	setdist = set_vertex_dist(dist, num_sets, membership)
+  # at = time_ns()
+  # println("setdist_time = ", (at - bt)/1e9)
   if length(powers) == 0
     powers = initialize_powers(param)
   elseif update_powers
@@ -450,6 +453,23 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
   end
 
   print_summary(lowest, timer, membership, param, tour_history, cost_mat_read_time, instance_read_time, num_trials_feasible, num_trials, param[:timeout], lock_times, before_time, time_spent_waiting_for_termination)
+
+  #=
+  println("before_time = ", vd_info.before_time)
+  println("open_pop_time = ", vd_info.open_pop_time)
+  println("closed_check_time = ", vd_info.closed_check_time)
+  println("closed_push_time = ", vd_info.closed_push_time)
+  println("inf_and_prune_check_time = ", vd_info.inf_and_prune_check_time)
+  println("succ_gen_time = ", vd_info.succ_gen_time)
+  println("succ_closed_time = ", vd_info.succ_closed_time)
+  println("seen_key_time = ", vd_info.seen_key_time)
+  println("seen_update_time = ", vd_info.seen_update_time)
+  println("open_push_time = ", vd_info.open_push_time)
+  println("goal_check_time = ", vd_info.goal_check_time)
+  println("num_nodes_pushed_to_open = ", vd_info.num_nodes_pushed_to_open)
+  println("num_nodes_pushed_to_open_with_same_f_val_as_parent = ", vd_info.num_nodes_pushed_to_open_with_same_f_val_as_parent)
+  println()
+  =#
 
   @assert(lowest.cost == tour_cost(lowest.tour, dist))
   @assert(length(lowest.tour) == num_sets)

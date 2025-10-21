@@ -15,6 +15,7 @@ function VDNode(tour_idx::Int64, parent::Vector{VDNode}, visited_removed_sets::V
   return VDNode(tour_idx, parent, visited_removed_sets, final_node_idx, (tour_idx, visited_removed_sets, final_node_idx), g_val)
 end
 
+# mutable struct VDInfo
 struct VDInfo
   before::Array{Bool, 2}
   before_set_to_set::Array{Bool, 2}
@@ -30,10 +31,12 @@ struct VDInfo
   seen_update_time::Float64
   open_push_time::Float64
   goal_check_time::Float64
+  num_nodes_pushed_to_open::Int64
+  num_nodes_pushed_to_open_with_same_f_val_as_parent::Int64
 end
 
 function VDInfo(dist::AbstractArray{Int64, 2}, sets::Vector{Vector{Int64}}, membership::Vector{Int64}, inf_val::Int64)
-  vd_info = VDInfo(ones(Bool, length(membership), length(sets)), zeros(Bool, length(sets), length(sets)), zeros(12)...)
+  vd_info = VDInfo(ones(Bool, length(membership), length(sets)), zeros(Bool, length(sets), length(sets)), zeros(12)..., 0, 0)
   if length(sets) == 0
     return vd_info
   end

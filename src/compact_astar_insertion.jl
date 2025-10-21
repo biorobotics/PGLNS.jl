@@ -16,6 +16,7 @@ struct VDNodeAstar
 end
 
 function VDNodeAstar(tour_idx::Int64, parent::Vector{VDNodeAstar}, visited_removed_sets::Vector{Bool}, final_node_idx::Int64, g_val::Int64, h_val::Int64)
+  # return VDNodeAstar(tour_idx, parent, visited_removed_sets, final_node_idx, (tour_idx, visited_removed_sets, final_node_idx), g_val, h_val, g_val + 10*h_val)
   return VDNodeAstar(tour_idx, parent, visited_removed_sets, final_node_idx, (tour_idx, visited_removed_sets, final_node_idx), g_val, h_val, g_val + h_val)
 end
 
@@ -47,6 +48,7 @@ function astar_insertion!(sets_to_insert::Vector{Int64}, dist::AbstractArray{Int
   open_list = HeapPriorityQueue{VDNodeAstar, Int64}()
   root_node = VDNodeAstar(1, Vector{VDNodeAstar}(), zeros(Bool, length(sets_to_insert)), 1, 0, 0)
   enqueue!(open_list, root_node, 0)
+  # vd_info.num_nodes_pushed_to_open += 1
 
   seen_nodes = Dict{Tuple{Int64, Vector{Bool}, Int64}, VDNodeAstar}()
   seen_nodes[root_node.key] = root_node
@@ -99,17 +101,26 @@ function astar_insertion!(sets_to_insert::Vector{Int64}, dist::AbstractArray{Int
       set_idx = removed_set_idx == -1 ? next_nonremoved_set_idx : sets_to_insert[removed_set_idx]
 
       if next_nonremoved_set_idx != -1 && vd_info.before_set_to_set[set_idx, next_nonremoved_set_idx]
+        # at = time_ns()
+        # vd_info.inf_and_prune_check_time += (at - bt)/1e9
         continue
       end
+      # at = time_ns()
+      # vd_info.inf_and_prune_check_time += (at - bt)/1e9
 
       this_set = removed_set_idx == -1 ? [partial_tour[next_nonremoved_idx]] : sets[set_idx]
       for node_idx in this_set
+        # bt = time_ns()
         h_val = num_nonremoved_visited == length(partial_tour) ? 0 : dist[node_idx, partial_tour[next_nonremoved_idx]] + h_vals[next_nonremoved_idx]
         if pop.g_val + dist[pop.final_node_idx, node_idx] + h_val >= ub
+          # at = time_ns()
+          # vd_info.inf_and_prune_check_time += (at - bt)/1e9
           continue
         end
 
         if dist[pop.final_node_idx, node_idx] == inf_val
+          # at = time_ns()
+          # vd_info.inf_and_prune_check_time += (at - bt)/1e9
           continue
         end
 
@@ -122,12 +133,14 @@ function astar_insertion!(sets_to_insert::Vector{Int64}, dist::AbstractArray{Int
           end
         end
         if prune
+          # at = time_ns()
           # vd_info.inf_and_prune_check_time += (at - bt)/1e9
           continue
         end
 
         # Check if unvisited nonremoved node is unreachable from node_idx. If so, prune
         if next_nonremoved_idx <= length(partial_tour) && node_idx != partial_tour[next_nonremoved_idx] && dist[node_idx, partial_tour[next_nonremoved_idx]] == inf_val
+          # at = time_ns()
           # vd_info.inf_and_prune_check_time += (at - bt)/1e9
           continue
         end
@@ -141,22 +154,47 @@ function astar_insertion!(sets_to_insert::Vector{Int64}, dist::AbstractArray{Int
           neighbor_node.visited_removed_sets[removed_set_idx] = true
           neighbor_node.key[2][removed_set_idx] = true
         end
+        # at = time_ns()
+        # vd_info.succ_gen_time += (at - bt)/1e9
 
+        # bt = time_ns()
         if neighbor_node.key in closed_list
+          # at = time_ns()
+          # vd_info.succ_closed_time += (at - bt)/1e9
           continue
         end
+        # at = time_ns()
+        # vd_info.succ_closed_time += (at - bt)/1e9
 
+        # bt = time_ns()
         if haskey(seen_nodes,  neighbor_node.key) && seen_nodes[neighbor_node.key].g_val <= neighbor_node.g_val
+          # at = time_ns()
+          # vd_info.seen_key_time += (at - bt)/1e9
           continue
         end
+        # at = time_ns()
+        # vd_info.seen_key_time += (at - bt)/1e9
 
+        # bt = time_ns()
         seen_nodes[neighbor_node.key] = neighbor_node
+        # at = time_ns()
+        # vd_info.seen_update_time += (at - bt)/1e9
 
+        # bt = time_ns()
         enqueue!(open_list, neighbor_node, neighbor_node.f_val)
+        # at = time_ns()
+        # vd_info.open_push_time += (at - bt)/1e9
+        # vd_info.num_nodes_pushed_to_open += 1
+        # if neighbor_node.g_val + h_val == pop.f_val
+        #   vd_info.num_nodes_pushed_to_open_with_same_f_val_as_parent += 1
+        # end
 
+        # bt = time_ns()
         if neighbor_node.f_val < goal_node.f_val && neighbor_node.tour_idx == length(sets)
           goal_node = neighbor_node
         end
+        # at = time_ns()
+        # vd_info.goal_check_time += (at - bt)/1e9
       end
     end
   end
