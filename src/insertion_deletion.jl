@@ -183,6 +183,8 @@ function remove_insert_dp(current::Tour, dist::AbstractArray{Int64,2}, member::A
     removal_idx = power_select(powers["removals"], powers["removal_total"], phase)
   end
   removal = powers["removals"][removal_idx]
+
+  #=
 	if removal.name == "distance"
 		sets_to_insert = distance_removal!(trial.tour, dist, num_removals,
 													member, removal.value)
@@ -191,6 +193,18 @@ function remove_insert_dp(current::Tour, dist::AbstractArray{Int64,2}, member::A
 													member, removal.value)
 	else
 		sets_to_insert = segment_removal!(trial.tour, num_removals, member)
+	end
+  =#
+
+  max_insertion_width = 4
+	if removal.name == "distance"
+		sets_to_insert = distance_removal_insertion_width!(trial.tour, dist, num_removals,
+													member, removal.value, max_insertion_width, vd_info)
+  elseif removal.name == "worst"
+		sets_to_insert = worst_removal_insertion_width!(trial.tour, dist, num_removals,
+													member, removal.value, max_insertion_width, vd_info)
+	else
+		sets_to_insert = segment_removal_insertion_width!(trial.tour, num_removals, member, max_insertion_width, vd_info)
 	end
 
   if trial.tour[1] != 1
@@ -539,6 +553,30 @@ function worst_removal!(tour::Array{Int64,1}, dist,
     return deleted_sets
 end
 
+"""
+Remove the vertices randomly, but biased towards those that add the most length to the
+tour.  Bias is based on the power input.  Vertices are then selected via pdf select.
+"""
+function worst_removal_insertion_width!(tour::Array{Int64,1}, dist,
+							num_to_remove::Int64, member, power::Float64, max_insertion_width::Int64, vd_info::VDInfo)
+  deleted_sets = Array{Int}(undef, 0)
+	while length(deleted_sets) < num_to_remove
+		removal_costs = worst_vertices(tour, dist)
+		ind = pdf_select(removal_costs, power)
+		set_to_delete = member[tour[ind]]
+
+    node_idx = splice!(tour, ind)
+    insertion_width = compute_insertion_width(tour, deleted_sets, vd_info)
+    if insertion_width > max_insertion_width
+      insert!(tour, ind, node_idx)
+      break
+    end
+
+    # perform the deletion
+    push!(deleted_sets, set_to_delete)
+	end
+  return deleted_sets
+end
 
 """ removing a single continuos segment of the tour of size num_remove """
 function segment_removal!(tour::Array{Int64, 1}, num_to_remove::Int64, member)
@@ -548,6 +586,25 @@ function segment_removal!(tour::Array{Int64, 1}, num_to_remove::Int64, member)
 		i > length(tour) && (i = 1)
 		push!(deleted_sets, member[tour[i]])
 		splice!(tour, i)
+	end
+	return deleted_sets
+end
+
+""" removing a single continuos segment of the tour of size num_remove """
+function segment_removal_insertion_width!(tour::Array{Int64, 1}, num_to_remove::Int64, member, max_insertion_width::Int64, vd_info::VDInfo)
+	i = rand(1:length(tour))
+	deleted_sets = Array{Int}(undef, 0)
+	while length(deleted_sets) < num_to_remove
+		i > length(tour) && (i = 1)
+    
+    node_idx = splice!(tour, i)
+    insertion_width = compute_insertion_width(tour, deleted_sets, vd_info)
+    if insertion_width > max_insertion_width
+      insert!(tour, i, node_idx)
+      break
+    end
+
+		push!(deleted_sets, member[node_idx])
 	end
 	return deleted_sets
 end
@@ -570,12 +627,47 @@ function distance_removal!(tour::Array{Int64,1}, dist,
         # find closest vertex to the seed vertex that's still in the tour
         mindist = zeros(Int64, length(tour))
         for i = 1:length(tour)
-			mindist[i] = min(dist[seed_vertex, tour[i]], dist[tour[i], seed_vertex])
+          mindist[i] = min(dist[seed_vertex, tour[i]], dist[tour[i], seed_vertex])
         end
         del_index = pdf_select(mindist, power)
         push!(deleted_sets, member[tour[del_index]])
         push!(deleted_vertices, tour[del_index])
         splice!(tour, del_index)
+    end
+
+    return deleted_sets
+end
+
+"""  pick a random vertex, and delete its closest neighbors  """
+function distance_removal_insertion_width!(tour::Array{Int64,1}, dist,
+							   num_to_remove::Int64, member, power::Float64, max_insertion_width::Int64, vd_info::VDInfo)
+    deleted_sets = Array{Int}(undef, 0)
+    deleted_vertices = Array{Int}(undef, 0)
+
+    seed_index = rand(1:length(tour))
+    push!(deleted_sets, member[tour[seed_index]])
+    push!(deleted_vertices, tour[seed_index])
+    splice!(tour, seed_index)
+
+    while length(deleted_sets) < num_to_remove
+        # pick a random vertex from the set of deleted vertices
+        seed_vertex = rand(deleted_vertices)
+        # find closest vertex to the seed vertex that's still in the tour
+        mindist = zeros(Int64, length(tour))
+        for i = 1:length(tour)
+          mindist[i] = min(dist[seed_vertex, tour[i]], dist[tour[i], seed_vertex])
+        end
+        del_index = pdf_select(mindist, power)
+
+        node_idx = splice!(tour, del_index)
+        insertion_width = compute_insertion_width(tour, deleted_sets, vd_info)
+        if insertion_width > max_insertion_width
+          insert!(tour, del_index, node_idx)
+          break
+        end
+
+        push!(deleted_sets, member[node_idx])
+        push!(deleted_vertices, node_idx)
     end
 
     return deleted_sets

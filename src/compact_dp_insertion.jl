@@ -103,6 +103,11 @@ function compute_removed_set_indices_per_tour_idx(tour::Array{Int64,1}, deleted_
   return removed_set_indices_per_tour_idx
 end
 
+function compute_insertion_width(tour::Array{Int64,1}, deleted_sets::Vector{Int64}, vd_info::VDInfo)
+  removed_set_indices_per_tour_idx = compute_removed_set_indices_per_tour_idx(tour, deleted_sets, vd_info)
+  return maximum([length(inds) for inds in removed_set_indices_per_tour_idx])
+end
+
 # Note: this whole function assumes open tsp, doesn't account for cost of returning to depot.
 # Not a fundamental limitation, I just didn't implement it to handle closed TSP
 function dp_insertion!(sets_to_insert::Vector{Int64}, dist::AbstractArray{Int64, 2}, sets::Vector{Vector{Int64}}, membership::Vector{Int64}, inf_val::Int64, stop_time::Float64, vd_info::VDInfo, partial_tour::Vector{Int64}, ub::Int64)
