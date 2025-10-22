@@ -20,6 +20,7 @@ using NPZ
 using Polyester: @batch
 using Base.Threads
 using ThreadPinning
+using Statistics
 import Future
 include("compact_astar_insertion.jl")
 include("utilities.jl")
@@ -94,6 +95,8 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
   temperature_lock = ReentrantLock()
 
   lock_times = zeros(nthreads)
+
+  # insertion_widths_per_thread = [Vector{Int64}() for thread_idx=1:nthreads]
 
   stop_upon_budget = param[:budget] != typemin(Int64)
 
@@ -205,6 +208,8 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
 
           if do_dp_insertion
             trial, this_triangle_violation = remove_insert_dp(current, dist, membership, setdist, sets_unshuffled, powers, param, this_phase, inf_val, init_time + param[:max_time], vd_info, powers_lock, current_lock, set_locks, update_powers, lock_times, thread_idx)
+            # trial, this_triangle_violation, insertion_width = remove_insert_dp(current, dist, membership, setdist, sets_unshuffled, powers, param, this_phase, inf_val, init_time + param[:max_time], vd_info, powers_lock, current_lock, set_locks, update_powers, lock_times, thread_idx)
+            # push!(insertion_widths_per_thread[thread_idx], insertion_width)
 
             if this_triangle_violation
               bt = time()
@@ -451,6 +456,9 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
   if param[:output_file] != "None"
     push!(tour_history, (round((time_ns() - start_time_for_tour_history)/1.0e9, digits=3), lowest.tour, lowest.cost))
   end
+
+  # insertion_widths = cat(insertion_widths_per_thread..., dims=1)
+  # println(minimum(insertion_widths), " ", median(insertion_widths), " ", maximum(insertion_widths))
 
   print_summary(lowest, timer, membership, param, tour_history, cost_mat_read_time, instance_read_time, num_trials_feasible, num_trials, param[:timeout], lock_times, before_time, time_spent_waiting_for_termination)
 

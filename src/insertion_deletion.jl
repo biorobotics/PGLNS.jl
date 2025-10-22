@@ -194,9 +194,10 @@ function remove_insert_dp(current::Tour, dist::AbstractArray{Int64,2}, member::A
 	else
 		sets_to_insert = segment_removal!(trial.tour, num_removals, member)
 	end
+  insertion_width = compute_insertion_width(trial.tour, sets_to_insert, vd_info)
   =#
 
-  max_insertion_width = 4
+  max_insertion_width = 13
 	if removal.name == "distance"
 		sets_to_insert = distance_removal_insertion_width!(trial.tour, dist, num_removals,
 													member, removal.value, max_insertion_width, vd_info)
@@ -284,6 +285,7 @@ function remove_insert_dp(current::Tour, dist::AbstractArray{Int64,2}, member::A
       unlock(powers_lock)
     end
   end
+  # return trial, false, insertion_width
   return trial, false
 end
 
