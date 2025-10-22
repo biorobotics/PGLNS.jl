@@ -289,6 +289,182 @@ function remove_insert_dp(current::Tour, dist::AbstractArray{Int64,2}, member::A
   return trial, false
 end
 
+function remove_insert_dp_optional(current::Tour, dist, member,
+						setdist::Distsv, sets::Vector{Vector{Int64}}, sets_unshuffled::Vector{Vector{Int64}},
+						powers, param::Dict{Symbol,Any}, phase::Symbol, inf_val::Int64, stop_time::Float64, vd_info::VDInfo, powers_lock::ReentrantLock, current_lock::ReentrantLock, set_locks::Vector{ReentrantLock}, update_powers::Bool, lock_times::Vector{Float64}, thread_idx::Int64)
+	# make a new tour to perform the insertion and deletion on
+  trial = Tour(Vector{Int64}(), 0)
+  bt = time()
+  lock(current_lock)
+  at = time()
+  lock_times[thread_idx] += at - bt
+  try
+    trial = tour_copy(current)
+  finally
+    unlock(current_lock)
+  end
+
+	num_removals = rand(param[:min_removals]:param[:max_removals])
+
+  removal_idx = 0
+  insertion_idx = 0
+  noise_idx = 0
+  if update_powers
+    bt = time()
+    lock(powers_lock)
+    at = time()
+    lock_times[thread_idx] += at - bt
+    try
+      removal_idx = power_select(powers["removals"], powers["removal_total"], phase)
+      insertion_idx = power_select(powers["insertions"], powers["insertion_total"], phase)
+      noise_idx = power_select(powers["noise"], powers["noise_total"], phase)
+    finally
+      unlock(powers_lock)
+    end
+  else
+    removal_idx = power_select(powers["removals"], powers["removal_total"], phase)
+    insertion_idx = power_select(powers["insertions"], powers["insertion_total"], phase)
+    noise_idx = power_select(powers["noise"], powers["noise_total"], phase)
+  end
+  removal = powers["removals"][removal_idx]
+  insertion = powers["insertions"][insertion_idx]
+  noise = powers["noise"][noise_idx]
+
+  if insertion.name == "dp"
+    # I'm doing this to avoid headaches of figuring out where node 1 used to be after removing it
+    idx1 = findfirst(==(1), trial.tour)
+    trial.tour = [trial.tour[idx1:end]; trial.tour[1:idx1-1]]
+
+    prev_cost = trial.cost
+
+    max_insertion_width = 13
+    if removal.name == "distance"
+      sets_to_insert = distance_removal_insertion_width!(trial.tour, dist, num_removals,
+                            member, removal.value, max_insertion_width, vd_info)
+    elseif removal.name == "worst"
+      sets_to_insert = worst_removal_insertion_width!(trial.tour, dist, num_removals,
+                            member, removal.value, max_insertion_width, vd_info)
+    else
+      sets_to_insert = segment_removal_insertion_width!(trial.tour, num_removals, member, max_insertion_width, vd_info)
+    end
+
+    if trial.tour[1] != 1
+      trial.tour = [1; trial.tour]
+      idx1 = findfirst(==(1), sets_to_insert)
+      splice!(sets_to_insert, idx1)
+      # sort!(sets_to_insert)
+    end
+
+    if param[:search_order] == "astar"
+      trial.tour = astar_insertion!(sets_to_insert, dist, sets, member, inf_val, stop_time, vd_info, trial.tour, prev_cost)
+    else
+      trial.tour = dp_insertion!(sets_to_insert, dist, sets, member, inf_val, stop_time, vd_info, trial.tour, prev_cost)
+    end
+
+    if length(trial.tour) == 0
+      bt = time()
+      lock(current_lock)
+      at = time()
+      lock_times[thread_idx] += at - bt
+      try
+        trial = tour_copy(current)
+      finally
+        unlock(current_lock)
+      end
+    else
+      trial.cost = tour_cost(trial.tour, dist)
+      if trial.cost >= inf_val
+        # Check if we took an infinite cost edge. Since inf_val equals the cost of the incumbent + 1,
+        # it's possible that the triangle inequality violation makes DP give a higher-cost tour than the
+        # incumbent, and thus the total cost might be >= inf_val
+        inf_edge = false
+        for (node_idx1, node_idx2) in zip(trial.tour[1:end-1], trial.tour[2:end])
+          if dist[node_idx1, node_idx2] == inf_val
+            inf_edge = true
+            break
+          end
+        end
+        inf_edge |= (dist[trial.tour[end], trial.tour[1]] == inf_val)
+        if inf_edge
+          throw("DP insertion gave infinite cost tour")
+        else
+          bt = time()
+          lock(current_lock)
+          at = time()
+          lock_times[thread_idx] += at - bt
+          try
+            trial = tour_copy(current)
+          finally
+            unlock(current_lock)
+          end
+          # return trial, true
+        end
+      end
+    end
+  else
+    pivot_tour!(trial.tour)
+
+    if removal.name == "distance"
+      sets_to_insert = distance_removal!(trial.tour, dist, num_removals,
+                            member, removal.value)
+    elseif removal.name == "worst"
+      sets_to_insert = worst_removal!(trial.tour, dist, num_removals,
+                            member, removal.value)
+    else
+      sets_to_insert = segment_removal!(trial.tour, num_removals, member)
+    end
+
+    randomize_sets!(sets, sets_to_insert, set_locks, lock_times, thread_idx)
+
+    if insertion.name == "cheapest"
+      cheapest_insertion!(trial.tour, sets_to_insert, dist, setdist, sets_unshuffled)
+    else
+      randpdf_insertion!(trial.tour, sets_to_insert, dist, setdist, sets, sets_unshuffled,
+                insertion.value, noise, set_locks, lock_times, thread_idx)
+    end
+
+    # Bug fix from original GLNS code. In original code, if opt_cycle wasn't called,
+    # we wouldn't update trial.cost
+    if rand() < param[:prob_reopt]
+      opt_cycle!(trial, dist, sets_unshuffled, member, param, setdist, "partial")
+    else
+      trial.cost = tour_cost(trial.tour, dist)
+    end
+  end
+
+  # Original GLNS code
+  # rand() < param[:prob_reopt] && opt_cycle!(trial, dist, sets_unshuffled, member, param, setdist, "partial")
+
+	# update power scores for remove and insert
+  if update_powers
+    score = 0.
+    bt = time()
+    lock(current_lock)
+    at = time()
+    lock_times[thread_idx] += at - bt
+    try
+      score = 100 * max(current.cost - trial.cost, 0)/current.cost
+    finally
+      unlock(current_lock)
+    end
+    bt = time()
+    lock(powers_lock)
+    at = time()
+    lock_times[thread_idx] += at - bt
+    try
+      insertion.scores[phase] += score
+      insertion.count[phase] += 1
+      removal.scores[phase] += score
+      removal.count[phase] += 1
+      noise.scores[phase] += score
+      noise.count[phase] += 1
+    finally
+      unlock(powers_lock)
+    end
+  end
+	return trial, false
+end
+
 """
 Select an integer between 1 and num according to
 and exponential distribution with lambda = power
