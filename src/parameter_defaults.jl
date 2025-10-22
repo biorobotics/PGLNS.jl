@@ -27,7 +27,7 @@ function parameter_settings(num_vertices, num_sets, sets, problem_instance, args
     num_iterations = num_iterations_multiplier * num_sets
     latest_improvement_multiplier = get(args, :latest_improvement, num_iterations_multiplier/2)
     latest_improvement = latest_improvement_multiplier * num_sets
-    first_improvement_multiplier = get(args, :first_improvement, num_iterations_multiplier/2)
+    first_improvement_multiplier = get(args, :first_improvement, num_iterations_multiplier/4)
     first_improvement = first_improvement_multiplier * num_sets
     max_removal_fraction = get(args, :max_removal_fraction, 0.3)
     max_removals_cap = get(args, :max_removals_cap, 100)
@@ -82,7 +82,7 @@ function parameter_settings(num_vertices, num_sets, sets, problem_instance, args
     num_iterations = num_iterations_multiplier * num_sets
     latest_improvement_multiplier = get(args, :latest_improvement, num_iterations_multiplier/3)
     latest_improvement = latest_improvement_multiplier * num_sets
-    first_improvement_multiplier = get(args, :first_improvement, num_iterations_multiplier/2)
+    first_improvement_multiplier = get(args, :first_improvement, num_iterations_multiplier/6)
     first_improvement = first_improvement_multiplier * num_sets
     max_removal_fraction = get(args, :max_removal_fraction, 0.4)
     max_removals_cap = get(args, :max_removals_cap, round(Int64, 0.4*num_sets))
@@ -100,7 +100,7 @@ function parameter_settings(num_vertices, num_sets, sets, problem_instance, args
 		:num_iterations => num_iterations,
 		:latest_improvement => latest_improvement,
 		:first_improvement => first_improvement,
-		:max_removals => min(max_removals_cap, max(round(Int64, max_removal_fraction*num_sets), 1)),
+		:max_removals => min(num_sets - 1, max_removals_cap, max(round(Int64, max_removal_fraction*num_sets), 1)),
 		:insertions => ["randpdf", "cheapest"],
 		)
 		
