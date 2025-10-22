@@ -18,6 +18,7 @@ end
 # mutable struct VDInfo
 struct VDInfo
   before::Array{Bool, 2}
+  after::Array{Bool, 2}
   before_set_to_set::Array{Bool, 2}
   before_time::Float64
   before_update_time::Float64
@@ -36,7 +37,7 @@ struct VDInfo
 end
 
 function VDInfo(dist::AbstractArray{Int64, 2}, sets::Vector{Vector{Int64}}, membership::Vector{Int64}, inf_val::Int64)
-  vd_info = VDInfo(ones(Bool, length(membership), length(sets)), zeros(Bool, length(sets), length(sets)), zeros(12)..., 0, 0)
+  vd_info = VDInfo(ones(Bool, length(membership), length(sets)), ones(Bool, length(membership), length(sets)), zeros(Bool, length(sets), length(sets)), zeros(12)..., 0, 0)
   if length(sets) == 0
     return vd_info
   end
@@ -53,8 +54,20 @@ function VDInfo(dist::AbstractArray{Int64, 2}, sets::Vector{Vector{Int64}}, memb
     end
   end
 
+  for set_idx=1:length(sets)
+    for node_idx=1:length(membership)
+      for node_idx2 in sets[set_idx]
+        if dist[node_idx2, node_idx] != inf_val
+          vd_info.after[node_idx, set_idx] = false
+          break
+        end
+      end
+    end
+  end
+
   for node_idx = 2:length(membership)
     vd_info.before[node_idx, membership[node_idx]] = false
+    vd_info.after[node_idx, membership[node_idx]] = false
   end
 
   for set_idx1=1:length(sets)
@@ -70,6 +83,24 @@ function VDInfo(dist::AbstractArray{Int64, 2}, sets::Vector{Vector{Int64}}, memb
   # vd_info.before_time += (at - bt)/1e9
 
   return vd_info
+end
+
+function compute_removed_set_indices_per_tour_idx(tour::Array{Int64,1}, deleted_sets::Vector{Int64}, vd_info::VDInfo)
+  num_sets = size(vd_info.before_set_to_set, 1)
+  removed_set_indices_per_tour_idx = Vector{Vector{Int64}}(undef, num_sets)
+  for tour_idx=1:num_sets
+    removed_set_indices_per_tour_idx[tour_idx] = Vector{Int64}()
+  end
+
+  for (removed_set_idx, set_idx) in enumerate(deleted_sets)
+    Pmin = 1 + sum(vd_info.after[tour, set_idx]) + sum(vd_info.before_set_to_set[set_idx, deleted_sets])
+    Pmax = num_sets - sum(vd_info.before[tour, set_idx]) - sum(vd_info.before_set_to_set[deleted_sets, set_idx])
+    for tour_idx=Pmin:Pmax
+      push!(removed_set_indices_per_tour_idx[tour_idx], removed_set_idx)
+    end
+  end
+
+  return removed_set_indices_per_tour_idx
 end
 
 # Note: this whole function assumes open tsp, doesn't account for cost of returning to depot.
@@ -102,18 +133,7 @@ function dp_insertion!(sets_to_insert::Vector{Int64}, dist::AbstractArray{Int64,
 
   # bt = time_ns()
 
-  removed_set_indices_per_tour_idx = Vector{Vector{Int64}}(undef, length(sets))
-  for tour_idx=1:length(sets)
-    removed_set_indices_per_tour_idx[tour_idx] = Vector{Int64}()
-  end
-
-  for (removed_set_idx, set_idx) in enumerate(sets_to_insert)
-    Pmin = sum(vd_info.before_set_to_set[set_idx, :]) + 1
-    Pmax = length(sets) - sum(vd_info.before_set_to_set[:, set_idx])
-    for tour_idx=Pmin:Pmax
-      push!(removed_set_indices_per_tour_idx[tour_idx], removed_set_idx)
-    end
-  end
+  removed_set_indices_per_tour_idx = compute_removed_set_indices_per_tour_idx(partial_tour, sets_to_insert, vd_info)
 
   # at = time_ns()
   # vd_info.before_update_time += (at - bt)/1e9

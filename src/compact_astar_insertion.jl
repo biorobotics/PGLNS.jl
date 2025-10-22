@@ -30,6 +30,7 @@ function astar_insertion!(sets_to_insert::Vector{Int64}, dist::AbstractArray{Int
     h_vals[tour_idx] = dist[partial_tour[tour_idx], partial_tour[tour_idx + 1]] + h_vals[tour_idx + 1]
   end
 
+  #=
   removed_set_indices_per_tour_idx = Vector{Vector{Int64}}(undef, length(sets))
   for tour_idx=1:length(sets)
     removed_set_indices_per_tour_idx[tour_idx] = Vector{Int64}()
@@ -42,6 +43,9 @@ function astar_insertion!(sets_to_insert::Vector{Int64}, dist::AbstractArray{Int
       push!(removed_set_indices_per_tour_idx[tour_idx], removed_set_idx)
     end
   end
+  =#
+
+  removed_set_indices_per_tour_idx = compute_removed_set_indices_per_tour_idx(partial_tour, sets_to_insert, vd_info)
 
   closed_list = Set{Tuple{Int64, Vector{Bool}, Int64}}()
 
@@ -52,6 +56,50 @@ function astar_insertion!(sets_to_insert::Vector{Int64}, dist::AbstractArray{Int
 
   seen_nodes = Dict{Tuple{Int64, Vector{Bool}, Int64}, VDNodeAstar}()
   seen_nodes[root_node.key] = root_node
+
+  #=
+  known_feas_tour = [1, 223, 393, 240, 155, 2, 36, 138, 172, 121, 19, 104, 189, 70, 87, 53, 257, 274, 291, 206, 376, 512, 631, 427, 529, 546, 308, 699, 359, 342, 563, 325, 614, 682, 410, 495, 478, 580, 444, 461, 767, 665, 869, 818, 1073, 597, 886, 648, 716, 937, 1022, 784, 1005, 750, 903, 1039, 733, 852, 1124, 835, 801, 971, 1141, 988, 1090, 954, 1294, 920, 1362, 1107, 1175, 1158, 1056, 1282, 1345, 1498, 1549, 1192, 1311, 1209, 1464, 1260, 1396, 1243, 1226, 1413, 1481, 1328, 1430, 1447, 1685, 1395, 1583, 1668, 1532, 1566, 1634, 1736, 1651, 1617, 1515, 1806, 1872, 1753, 1838, 1702, 1600, 1906, 1855, 1719, 2093, 1770, 1796, 1823, 1889, 1974, 1991, 2008, 2161, 2127, 1940, 2399, 2144, 1957, 1923, 2229, 2450, 2042, 2059, 2025, 2518, 2076, 2484, 2178, 2467, 2297, 2110, 2705, 2246, 2263, 2195, 2382, 2212, 2348, 2365, 2314, 2773, 2331, 2535, 2824, 2280, 2433, 2586, 2756, 2552, 2501, 2722, 2671, 2858, 2790, 2416, 2688, 2603, 2620, 3062, 2569, 2977, 2739, 2926, 2960, 2654, 2637, 3096, 2841, 2815, 2920, 3045, 3079, 2943, 3130, 2875, 3198, 2892, 3011, 3113, 3028, 3283, 3215, 2994, 3334, 3300, 3249, 3147, 3164, 3232, 3266, 3181, 3317, 3351, 3385, 3368]
+  known_feas_vd_node_seq = [root_node]
+  for (tour_idx, node_idx) in enumerate(known_feas_tour)
+    if tour_idx == 1
+      continue
+    end
+    visited_removed_sets = copy(known_feas_vd_node_seq[end].visited_removed_sets)
+    removed_set_idx = findfirst(==(membership[node_idx]), sets_to_insert)
+    if removed_set_idx != nothing
+      visited_removed_sets[removed_set_idx] = true
+      if !(removed_set_idx in removed_set_indices_per_tour_idx[tour_idx])
+        set_idx = sets_to_insert[removed_set_idx]
+        println("tour_idx = ", tour_idx)
+        println("removed_set_idx = ", removed_set_idx)
+        println("set_idx = ", set_idx)
+        println("number of removed sets = ", length(sets_to_insert))
+
+        for node_idx2 in known_feas_tour[tour_idx + 1:end]
+          if vd_info.after[node_idx2, set_idx]
+            throw("Error: after[node_idx2, set_idx] but set_idx comes before")
+          end
+
+          if vd_info.before_set_to_set[set_idx, membership[node_idx2]]
+            throw("Error: before_set_to_set[set_idx, membership[node_idx2]] but set_idx comes before")
+          end
+        end
+
+        for node_idx2 in known_feas_tour[1:tour_idx-1]
+          if vd_info.before[node_idx2, set_idx]
+            throw("Error: before[node_idx2, set_idx] but set_idx comes after")
+          end
+
+          if vd_info.before_set_to_set[membership[node_idx2], set_idx]
+            throw("Error: before_set_to_set[membership[node_idx2], set_idx] but set_idx comes after")
+          end
+        end
+        throw("Error: cannot reconstruct known feas tour")
+      end
+    end
+    vd_node = VDNodeAstar(tour_idx, [known_feas_vd_node_seq[end]], visited_removed_sets, node_idx, 0, 0)
+  end
+  =#
 
   goal_node = VDNodeAstar(0, Vector{VDNodeAstar}(), zeros(Bool, 1), 1, typemax(Int64), 0)
   while length(open_list) != 0 && goal_node.f_val > peek(open_list).first.f_val
@@ -100,7 +148,7 @@ function astar_insertion!(sets_to_insert::Vector{Int64}, dist::AbstractArray{Int
       # bt = time_ns()
       set_idx = removed_set_idx == -1 ? next_nonremoved_set_idx : sets_to_insert[removed_set_idx]
 
-      if next_nonremoved_set_idx != -1 && vd_info.before_set_to_set[set_idx, next_nonremoved_set_idx]
+      if next_nonremoved_set_idx != -1 && vd_info.after[partial_tour[next_nonremoved_idx], set_idx]
         # at = time_ns()
         # vd_info.inf_and_prune_check_time += (at - bt)/1e9
         continue
