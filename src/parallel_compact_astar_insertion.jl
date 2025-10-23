@@ -107,7 +107,7 @@ function astar_insertion!(sets_to_insert::Vector{Int64}, dist::AbstractArray{Int
   end
   =#
 
-  # num_node_tuples_per_expansion = Vector{Int64}()
+  # num_cand_successors_per_expansion = Vector{Int64}()
 
   goal_node = VDNodeAstar(0, Vector{VDNodeAstar}(), zeros(Bool, 1), 1, typemax(Int64), 0)
   while length(open_list) != 0 && goal_node.f_val > peek(open_list).first.f_val
@@ -156,7 +156,7 @@ function astar_insertion!(sets_to_insert::Vector{Int64}, dist::AbstractArray{Int
       next_nonremoved_set_idx = membership[partial_tour[next_nonremoved_idx]]
     end
 
-    node_tuples = Vector{Tuple{Int64,Int64}}()
+    cand_successors = Vector{Tuple{Int64,Int64}}()
     for removed_set_idx in unvisited_removed_sets
       # bt = time_ns()
       set_idx = removed_set_idx == -1 ? next_nonremoved_set_idx : sets_to_insert[removed_set_idx]
@@ -170,10 +170,10 @@ function astar_insertion!(sets_to_insert::Vector{Int64}, dist::AbstractArray{Int
       # vd_info.inf_and_prune_check_time += (at - bt)/1e9
 
       this_set = removed_set_idx == -1 ? [partial_tour[next_nonremoved_idx]] : sets[set_idx]
-      node_tuples = cat(node_tuples, [(node_idx, removed_set_idx) for node_idx in this_set], dims=1)
+      cand_successors = cat(cand_successors, [(node_idx, removed_set_idx) for node_idx in this_set], dims=1)
     end
 
-    # push!(num_node_tuples_per_expansion, length(node_tuples))
+    # push!(num_cand_successors_per_expansion, length(cand_successors))
 
     num_threads = Threads.nthreads()
     neighbor_nodes_per_thread = Vector{Vector{VDNodeAstar}}(undef, num_threads)
@@ -181,7 +181,7 @@ function astar_insertion!(sets_to_insert::Vector{Int64}, dist::AbstractArray{Int
       neighbor_nodes_per_thread[thread_idx] = Vector{VDNodeAstar}()
     end
     # bt = time_ns()
-    Threads.@threads :static for (node_idx, removed_set_idx) in node_tuples
+    Threads.@threads :static for (node_idx, removed_set_idx) in cand_successors
       # bt = time_ns()
       h_val = num_nonremoved_visited == length(partial_tour) ? 0 : dist[node_idx, partial_tour[next_nonremoved_idx]] + h_vals[next_nonremoved_idx]
       if pop.g_val + dist[pop.final_node_idx, node_idx] + h_val >= ub
@@ -281,7 +281,7 @@ function astar_insertion!(sets_to_insert::Vector{Int64}, dist::AbstractArray{Int
   # println("Number of expanded nodes = ", num_expanded_nodes, ", number of generated nodes = ", num_generated_nodes, ", ratio = ", num_expanded_nodes/num_generated_nodes)
   # println("min/median/max number of successors = ", minimum(numbers_of_successors), " ", median(numbers_of_successors), " ", maximum(numbers_of_successors))
 
-  # println("min/median/max number of node tuples per expansion = ", minimum(num_node_tuples_per_expansion), " ", median(num_node_tuples_per_expansion), " ", maximum(num_node_tuples_per_expansion))
+  # println("min/median/max number of candidate successors per expansion = ", minimum(num_cand_successors_per_expansion), " ", median(num_cand_successors_per_expansion), " ", maximum(num_cand_successors_per_expansion))
 
   # No solution
   if length(open_list) == 0
