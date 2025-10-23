@@ -140,15 +140,15 @@ end
 Update both insertion and deletion powers along with the total weights
 if we are a multiple of param[:adaptive_iter] iterations in trial
 """
-function power_update!(powers, param::Dict{Symbol,Any})
+function power_update!(powers, param::Dict{Symbol,Any}, do_average::Bool)
 	for phase in [:early, :mid, :late]
 		power_weight_update!(powers["insertions"], param, phase)
 		power_weight_update!(powers["removals"], param, phase)
 		power_weight_update!(powers["noise"], param, phase)
 	end
-	powers["insertion_total"] = total_power_weight(powers["insertions"])
-	powers["removal_total"] = total_power_weight(powers["removals"])
-	powers["noise_total"] = total_power_weight(powers["noise"])
+	powers["insertion_total"] = total_power_weight(powers["insertions"], do_average)
+	powers["removal_total"] = total_power_weight(powers["removals"], do_average)
+	powers["noise_total"] = total_power_weight(powers["noise"], do_average)
 end
 
 
@@ -157,9 +157,9 @@ Update only at the end of each trial -- update based on average success
 over the trial
 """
 function power_weight_update!(powers::Array{Power, 1}, param::Dict{Symbol,Any},
-								phase::Symbol)
+								phase::Symbol, do_average::Bool)
 	for power in powers
-		if power.count[phase] > 0 && param[:cold_trials] > 0  # average after 2nd trial
+		if power.count[phase] > 0 && do_average
 			power.weight[phase] = param[:epsilon] * power.scores[phase]/power.count[phase] +
 									(1 - param[:epsilon]) * power.weight[phase]
 		elseif power.count[phase] > 0

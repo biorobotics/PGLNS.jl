@@ -64,7 +64,11 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
   if length(powers) == 0
     powers = initialize_powers(param)
   elseif update_powers
-    power_update!(powers, param)
+    # Assume powers came from a solve of another GTSP. Perform update.
+    # I am performing averaging here. Not sure if that's the right way to go.
+    # Overall the power updates between GTSP solves on different sample point graphs
+    # did not seem to matter anyway
+    power_update!(powers, param, true)
   end
   
   sets_unshuffled = deepcopy(sets)
@@ -119,7 +123,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
 		phase = :early
 
     if count[:cold_trial] > 1 && update_powers
-      power_update!(powers, param)
+      power_update!(powers, param, true)
     end
 
     while count[:warm_trial] <= param[:warm_trials]
@@ -489,7 +493,7 @@ function parse_cmd(ARGS)
 	return filename, optional_args
 end
 
-function main(args, max_time::Float64, inf_val::Int64, given_initial_tours::AbstractArray{Int64,1}, dist::AbstractArray{Int64,2}, max_threads::Int64, pin_cores::Vector{Int64}=Vector{Int64}(), do_perf::Bool=false, perf_file::String="")
+function main(args, max_time::Float64, inf_val::Int64, given_initial_tours::AbstractArray{Int64,1}, dist::AbstractArray{Int64,2}, max_threads::Int64, pin_cores::Vector{Int64}=Vector{Int64}(), powers::Dict{String,Any}=Dict{String,Any}())
   start_time_for_tour_history = time_ns()
   problem_instance, optional_args = parse_cmd(args)
   problem_instance = String(problem_instance)
@@ -508,7 +512,7 @@ function main(args, max_time::Float64, inf_val::Int64, given_initial_tours::Abst
 
   cost_mat_read_time = 0.
 
-  powers = Dict{String, Any}()
+  # update_powers = true
   update_powers = false
 
   if size(dist, 1) == 0
@@ -526,40 +530,7 @@ function main(args, max_time::Float64, inf_val::Int64, given_initial_tours::Abst
     num_vertices += 1
   end
 
-  # Perf code
-  perf_pid = -1
-  if do_perf
-    @assert(length(perf_file) != 0)
-    pid = string(getpid())
-    # timestr = string(time())
-    # Assumes we're just storing in the local directory so there aren't any slashes in the output file name. Also assumes perf_data has been created
-    num = 0
-    # cmd = `perf stat -p $pid -M tma_dram_bound,tma_l1_bound,tma_l2_bound,tma_l3_bound -e cache-references,cache-misses,L1-dcache-load-misses,L1-dcache-loads,L1-dcache-stores,L1-icache-load-misses,l2_rqsts.miss,l2_rqsts.references,LLC-loads,LLC-load-misses,LLC-stores,LLC-store-misses -o $perf_file`
-    # cmd = `perf stat -p $pid -M tma_dram_bound,tma_l1_bound,tma_l2_bound,tma_l3_bound -e cache-references,cache-misses,L1-dcache-load-misses,L1-dcache-loads,L1-dcache-stores,L1-icache-load-misses,l2_rqsts.miss,l2_rqsts.references,LLC-loads,LLC-load-misses,LLC-stores,LLC-store-misses,offcore_response.pf_l1d_and_sw.l3_hit.any_snoop -o $perf_file`
-    # cmd = `perf stat -p $pid -M tma_dram_bound,tma_l1_bound,tma_l2_bound,tma_l3_bound -e L1-dcache-load-misses,L1-dcache-loads,l2_rqsts.all_demand_data_rd,l2_rqsts.demand_data_rd_miss,LLC-loads,LLC-load-misses -o $perf_file`
-    # cmd = `perf stat -p $pid -M tma_l1_bound -o $perf_file`
-    # cmd = `perf stat -p $pid -M tma_dram_bound,tma_l1_bound,tma_l2_bound,tma_l3_bound -o $perf_file`
-    # cmd = `perf stat -p $pid -M tma_l1_bound -e L1-dcache-load-misses,L1-dcache-loads -o $perf_file`
-    # cmd = `perf stat -p $pid -e L1-dcache-load-misses,L1-dcache-loads,offcore_response.pf_l1d_and_sw.l3_hit.any_snoop,offcore_response.pf_l1d_and_sw.l3_miss.any_snoop -o $perf_file`
-    cmd = `perf stat -p $pid -M tma_l1_bound,tma_l2_bound,tma_l3_bound,tma_dram_bound -e LLC-loads,LLC-load-misses -o $perf_file`
-    # cmd = `perf stat -p $pid -M tma_dram_bound -o $perf_file`
-    perf_proc = run(pipeline(cmd, stdout=stdout, stderr=stdout); wait=false)
-    perf_pid = getpid(perf_proc)
-    # sleep(1)
-    # sleep(1)
-  end
-  min_elapsed_time = do_perf ? 0.2 : 0.
-  bt_for_perf = time_ns()
   timing_result = @timed GLNS.solver(problem_instance, given_initial_tours, start_time_for_tour_history, inf_val, num_vertices, num_sets, sets, dist, membership, instance_read_time, cost_mat_read_time, max_threads, powers, update_powers, pin_cores; optional_args...)
-  at_for_perf = time_ns()
-  while (at_for_perf - bt_for_perf)/1.0e9 < min_elapsed_time
-    timing_result = @timed GLNS.solver(problem_instance, given_initial_tours, start_time_for_tour_history, inf_val, num_vertices, num_sets, sets, dist, membership, instance_read_time, cost_mat_read_time, max_threads, powers, update_powers, pin_cores; optional_args...)
-    at_for_perf = time_ns()
-  end
-  if do_perf
-    @assert(perf_pid != -1)
-    run(`kill -2 $perf_pid`)
-  end
   if get(optional_args, :verbose, 0) == 3
     println("Compile time: ", timing_result.compile_time)
   end
