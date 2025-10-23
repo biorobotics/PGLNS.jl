@@ -215,6 +215,8 @@ function remove_insert_dp(current::Tour, dist::AbstractArray{Int64,2}, member::A
     # sort!(sets_to_insert)
   end
 
+  num_removed = length(sets_to_insert)
+
   if param[:search_order] == "astar"
     trial.tour = astar_insertion!(sets_to_insert, dist, sets, member, inf_val, stop_time, vd_info, trial.tour, prev_cost)
   else
@@ -286,7 +288,7 @@ function remove_insert_dp(current::Tour, dist::AbstractArray{Int64,2}, member::A
     end
   end
   # return trial, false, insertion_width
-  return trial, false
+  return trial, false, num_removed
 end
 
 function remove_insert_dp_optional(current::Tour, dist, member,

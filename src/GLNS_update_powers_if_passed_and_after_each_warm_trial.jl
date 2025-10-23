@@ -64,14 +64,12 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
 	setdist = set_vertex_dist(dist, num_sets, membership)
   # at = time_ns()
   # println("setdist_time = ", (at - bt)/1e9)
+  powers_initially_empty = false
   if length(powers) == 0
     powers = initialize_powers(param)
+    powers_initially_empty = true
   elseif update_powers
-    # Assume powers came from a solve of another GTSP. Perform update.
-    # I am performing averaging here. Not sure if that's the right way to go.
-    # Overall the power updates between GTSP solves on different sample point graphs
-    # did not seem to matter anyway
-    power_update!(powers, param, true)
+    power_update!(powers, param, !powers_initially_empty)
   end
   
   sets_unshuffled = deepcopy(sets)
@@ -122,6 +120,7 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
 
   time_spent_waiting_for_termination = 0.
 
+  num_total_warm = 0
 	while !triangle_violation
     if count[:cold_trial] > param[:cold_trials] && !stop_upon_budget
       break
@@ -142,11 +141,18 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
 		# print_cold_trial(count, param, best)
 		phase = :early
 
+    #=
     if count[:cold_trial] > 1 && update_powers
-      power_update!(powers, param, true)
+      power_update!(powers, param)
     end
+    =#
 
     while count[:warm_trial] <= param[:warm_trials] && !triangle_violation
+      if update_powers && num_total_warm > 0
+        power_update!(powers, param, !powers_initially_empty)
+      end
+      num_total_warm += 1
+
       best_update_time = time_ns()
       iter_count = 1
       current = tour_copy(best)
@@ -212,8 +218,8 @@ function solver(problem_instance::String, given_initial_tours::AbstractArray{Int
           end
 
           if do_dp_insertion
-            trial, this_triangle_violation, num_removed = remove_insert_dp(current, dist, membership, setdist, sets_unshuffled, powers, param, this_phase, inf_val, init_time + param[:max_time], vd_info, powers_lock, current_lock, set_locks, update_powers, lock_times, thread_idx)
-            # trial, this_triangle_violation = remove_insert_dp_optional(current, dist, membership, setdist, sets, sets_unshuffled, powers, param, this_phase, inf_val, init_time + param[:max_time], vd_info, powers_lock, current_lock, set_locks, update_powers, lock_times, thread_idx)
+            # trial, this_triangle_violation, num_removed = remove_insert_dp(current, dist, membership, setdist, sets_unshuffled, powers, param, this_phase, inf_val, init_time + param[:max_time], vd_info, powers_lock, current_lock, set_locks, update_powers, lock_times, thread_idx)
+            trial, this_triangle_violation = remove_insert_dp_optional(current, dist, membership, setdist, sets, sets_unshuffled, powers, param, this_phase, inf_val, init_time + param[:max_time], vd_info, powers_lock, current_lock, set_locks, update_powers, lock_times, thread_idx)
             # trial, this_triangle_violation, insertion_width = remove_insert_dp(current, dist, membership, setdist, sets_unshuffled, powers, param, this_phase, inf_val, init_time + param[:max_time], vd_info, powers_lock, current_lock, set_locks, update_powers, lock_times, thread_idx)
             # push!(insertion_widths_per_thread[thread_idx], insertion_width)
             # push!(num_removed_per_thread[thread_idx], num_removed)
@@ -571,6 +577,7 @@ function main(args, max_time::Float64, inf_val::Int64, given_initial_tours::Abst
 
   cost_mat_read_time = 0.
 
+  # powers = Dict{String, Any}()
   # update_powers = true
   update_powers = false
 
