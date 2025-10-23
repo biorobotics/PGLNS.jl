@@ -107,6 +107,8 @@ function astar_insertion!(sets_to_insert::Vector{Int64}, dist::AbstractArray{Int
   end
   =#
 
+  # num_node_tuples_per_expansion = Vector{Int64}()
+
   goal_node = VDNodeAstar(0, Vector{VDNodeAstar}(), zeros(Bool, 1), 1, typemax(Int64), 0)
   while length(open_list) != 0 && goal_node.f_val > peek(open_list).first.f_val
     if time() >= stop_time
@@ -170,6 +172,8 @@ function astar_insertion!(sets_to_insert::Vector{Int64}, dist::AbstractArray{Int
       this_set = removed_set_idx == -1 ? [partial_tour[next_nonremoved_idx]] : sets[set_idx]
       node_tuples = cat(node_tuples, [(node_idx, removed_set_idx) for node_idx in this_set], dims=1)
     end
+
+    # push!(num_node_tuples_per_expansion, length(node_tuples))
 
     num_threads = Threads.nthreads()
     neighbor_nodes_per_thread = Vector{Vector{VDNodeAstar}}(undef, num_threads)
@@ -276,6 +280,8 @@ function astar_insertion!(sets_to_insert::Vector{Int64}, dist::AbstractArray{Int
   # println("max tour idx: ", max_tour_idx)
   # println("Number of expanded nodes = ", num_expanded_nodes, ", number of generated nodes = ", num_generated_nodes, ", ratio = ", num_expanded_nodes/num_generated_nodes)
   # println("min/median/max number of successors = ", minimum(numbers_of_successors), " ", median(numbers_of_successors), " ", maximum(numbers_of_successors))
+
+  # println("min/median/max number of node tuples per expansion = ", minimum(num_node_tuples_per_expansion), " ", median(num_node_tuples_per_expansion), " ", maximum(num_node_tuples_per_expansion))
 
   # No solution
   if length(open_list) == 0
