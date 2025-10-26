@@ -16,7 +16,7 @@
 
 using Sockets
 import Pkg
-Pkg.activate(expanduser("~/PGLNS.jl"))
+Pkg.activate(expanduser("."))
 import GLNS
 using Printf
 using NPZ
@@ -53,14 +53,14 @@ function main()
     if i == 1
       # Handle the case where no initial tour is passed
       solver_state = GLNS.initialize_solver_state(cat(ARGS, ["-budget="*string(inf_val - 1)], dims=1), inf_val, Vector{Int64}(), dist, evaluated_edge_mat, stop_at_first_improvement_with_unevaluated_edges, 10, pin_cores)
-      GLNS.solve_with_state!(solver_state, 10.)
+      GLNS.solve_with_state!(solver_state, 10., zeros(Int64, 0, 2), Vector{Int64}(), false, 0, false)
       solver_state = GLNS.initialize_solver_state(cat(ARGS, ["-init_tour=rand", "-budget="*string(inf_val - 1)], dims=1), inf_val, Vector{Int64}(), dist, evaluated_edge_mat, stop_at_first_improvement_with_unevaluated_edges, 10, pin_cores)
-      GLNS.solve_with_state!(solver_state, 10.)
+      GLNS.solve_with_state!(solver_state, 10., zeros(Int64, 0, 2), Vector{Int64}(), false, 0, false)
     end
     solver_state = GLNS.initialize_solver_state(ARGS, inf_val, given_initial_tours, dist, evaluated_edge_mat, stop_at_first_improvement_with_unevaluated_edges, 10, pin_cores)
-    GLNS.solve_with_state!(solver_state, 10.)
+    GLNS.solve_with_state!(solver_state, 10., zeros(Int64, 0, 2), given_initial_tours, false, 0, false)
     solver_state = GLNS.initialize_solver_state(PyList{Any}(ARGS), inf_val, PyArray{Int64, 1, true, true, Int64}(given_initial_tours), PyArray{Int64, 2, true, true, Int64}(dist), PyArray{Bool, 2, true, true, Bool}(evaluated_edge_mat), stop_at_first_improvement_with_unevaluated_edges, 10, pin_cores)
-    GLNS.solve_with_state!(solver_state, 10.)
+    GLNS.solve_with_state!(solver_state, 10., zeros(Int64, 0, 2), given_initial_tours, false, 0, false)
   end
 end
 

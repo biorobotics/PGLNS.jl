@@ -360,11 +360,6 @@ function solve_with_state!(solver_state::SolverState, new_time_limit::Float64, u
                                               param[:latest_improvement] : param[:first_improvement]))
               thread_broke = true
               do_break = true
-
-              if (count[:latest_improvement] > (count[:first_improvement] ?
-                                              param[:latest_improvement] : param[:first_improvement])) && count[:warm_trial] == param[:warm_trials]
-                println("Reached termination criteria")
-              end
             end
           finally
             unlock(count_lock)
